@@ -1,0 +1,7 @@
+streamlit
+anthropic
+python-dotenv
+pypdf2
+python-docx
+supabase
+pandas
