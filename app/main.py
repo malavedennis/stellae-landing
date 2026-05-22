@@ -438,6 +438,77 @@ def parse_rules_from_text(text: str) -> list:
     return rules
 
 
+def auto_generate_governance(document_text: str, project_name: str) -> dict:
+    """
+    Usa Claude para extraer roles y reglas de escalación desde un documento
+    de proyecto (PEP, contrato, Project Charter, RACI, etc.).
+    Retorna dict con 'roles' y 'rules' listos para confirmar e insertar.
+    """
+    client = anthropic.Anthropic()
+
+    prompt = f"""Eres un experto en gobernanza de proyectos de capital en Oil & Gas, 
+minería e infraestructura. Analiza el siguiente documento de proyecto y extrae:
+
+1. La jerarquía de roles y niveles de autoridad que aparecen explícita o implícitamente
+2. Las áreas o temas que según el documento requieren aprobación formal o escalación
+
+Responde ÚNICAMENTE con un JSON válido con esta estructura exacta, sin texto adicional:
+{{
+  "roles": [
+    {{
+      "role_name": "nombre del rol",
+      "authority_level": número del 1 al 5,
+      "can_approve_changes": true o false,
+      "max_impact_value": número en USD o 0 si no se especifica
+    }}
+  ],
+  "rules": [
+    {{
+      "rule_name": "descripción corta de la regla",
+      "category": "decision" o "change" o "risk",
+      "trigger_keywords": ["keyword1", "keyword2", "keyword3"],
+      "required_authority_level": número del 1 al 5
+    }}
+  ]
+}}
+
+Criterios para asignar authority_level:
+1 = roles de campo / técnicos sin autoridad de aprobación
+2 = ingenieros / especialistas que reportan hallazgos
+3 = project managers / supervisores que aprueban cambios menores
+4 = project directors / gerentes que aprueban cambios mayores
+5 = steering committee / board / comité ejecutivo
+
+Criterios para trigger_keywords:
+- Usa palabras que aparecerían en documentos de proyecto cuando ese tema esté presente
+- Incluye versiones en español e inglés de cada keyword relevante
+- Mínimo 3 keywords por regla, máximo 8
+- Palabras simples y específicas, no frases largas
+
+Proyecto: {project_name}
+
+Documento a analizar:
+{document_text[:12000]}
+
+Responde SOLO con el JSON. Sin explicaciones. Sin markdown. Sin texto antes o después."""
+
+    message = client.messages.create(
+        model=MODEL_ID,
+        max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    response_text = message.content[0].text.strip()
+
+    # Limpiar posibles backticks de markdown
+    if response_text.startswith("```"):
+        response_text = re.sub(r"```(?:json)?", "", response_text).strip()
+
+    import json
+    result = json.loads(response_text)
+    return result
+
+
 def load_project_context(supabase_client: Client, project_id: str) -> dict:
     """Carga el contexto completo de un proyecto desde Supabase."""
     response = (
@@ -1506,164 +1577,398 @@ def render_analysis_page(supabase_client: Client) -> None:
 
 
 def render_governance_page(supabase_client: Client) -> None:
-    """Página Governance: matriz de autoridad y reglas de escalación por proyecto."""
+    """Página Governance: configuración completa de gobernanza por proyecto."""
     st.title("🏛️ Governance Setup")
-    st.markdown(
-        '<p class="subtitle">Define authority roles and escalation rules per project</p>',
-        unsafe_allow_html=True,
-    )
 
     project_id = st.session_state.get("project_id")
-    project_name = st.session_state.get("project_name", "")
+    selected_name = st.session_state.get("project_name", "")
 
     if not project_id:
         st.info("ℹ️ Select a project in the sidebar to configure governance.")
         return
 
-    # ── SECCIÓN: Contexto del Proyecto ──────────────────────────────────────
-    st.header("Project Context")
-    st.markdown("Define the project background so Nexus can detect deviations from the original plan.")
-
-    # Cargar contexto existente del proyecto
+    # Cargar datos del proyecto
     proj_data = load_project_context(supabase_client, project_id)
 
-    with st.form("project_context_form", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        with col1:
-            industry = st.text_input(
-                "Industry / Sector",
-                value=proj_data.get("industry") or "",
-                placeholder="Ex: Oil & Gas, Infrastructure, Mining, Defense"
+    # =========================================================================
+    # 1. PROJECT CONTEXT — expander
+    # =========================================================================
+    with st.expander("📋 Project Context", expanded=False):
+        with st.form("project_context_form", clear_on_submit=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                industry = st.text_input(
+                    "Industry / Sector",
+                    value=proj_data.get("industry") or "",
+                    placeholder="Ex: Oil & Gas, Infrastructure, Mining, Defense"
+                )
+                project_type = st.text_input(
+                    "Project Type",
+                    value=proj_data.get("project_type") or "",
+                    placeholder="Ex: EPC, EPCM, Design-Build, O&M"
+                )
+            with col2:
+                project_stage = st.text_input(
+                    "Current Stage",
+                    value=proj_data.get("project_stage") or "",
+                    placeholder="Ex: FEED, Detailed Engineering, Construction, Commissioning"
+                )
+                description = st.text_area(
+                    "Project Description",
+                    value=proj_data.get("description") or "",
+                    placeholder="Brief description of the project objectives and scope",
+                    height=80,
+                )
+
+            st.markdown("**Reference Document** *(optional — service design, procedures, project charter)*")
+            if proj_data.get("context_filename"):
+                st.caption(f"Current: {proj_data['context_filename']} — upload a new file to replace it.")
+
+            context_file = st.file_uploader(
+                "Upload reference document",
+                type=["pdf", "docx", "txt"],
+                key="context_doc_uploader",
+                label_visibility="collapsed",
             )
-            project_type = st.text_input(
-                "Project Type",
-                value=proj_data.get("project_type") or "",
-                placeholder="Ex: EPC, EPCM, Design-Build, O&M"
-            )
-        with col2:
-            project_stage = st.text_input(
-                "Current Stage",
-                value=proj_data.get("project_stage") or "",
-                placeholder="Ex: FEED, Detailed Engineering, Construction, Commissioning"
-            )
-            description = st.text_area(
-                "Project Description",
-                value=proj_data.get("description") or "",
-                placeholder="Brief description of the project objectives and scope",
-                height=80,
-            )
+            save_context = st.form_submit_button("💾 Save Project Context", type="primary")
 
-        # Upload de documento de referencia
-        st.markdown("**Reference Document** *(optional — service design, procedures, project charter)*")
-        if proj_data.get("context_filename"):
-            st.caption(f"Current: {proj_data['context_filename']} — upload a new file to replace it.")
-
-        context_file = st.file_uploader(
-            "Upload reference document",
-            type=["pdf", "docx", "txt"],
-            key="context_doc_uploader",
-            label_visibility="collapsed",
-        )
-
-        save_context = st.form_submit_button("💾 Save Project Context", type="primary")
-
-    if save_context:
-        # Extraer texto del documento de referencia si se subió uno nuevo
-        context_text = proj_data.get("context_document")
-        context_filename = proj_data.get("context_filename")
-
-        if context_file:
-            ext = context_file.name.rsplit(".", 1)[-1].lower()
-            if ext == "pdf":
-                context_text = extract_text_from_pdf(context_file)
-            elif ext == "docx":
-                context_text = extract_text_from_docx(context_file)
-            elif ext == "txt":
-                context_text = extract_text_from_txt(context_file)
-            context_filename = context_file.name
-
-        try:
-            supabase_client.table("projects").update({
-                "description": description,
-                "industry": industry,
-                "project_type": project_type,
-                "project_stage": project_stage,
-                "context_document": context_text,
-                "context_filename": context_filename,
-            }).eq("id", project_id).execute()
-            st.success("✅ Project context saved successfully.")
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ Failed to save context: {e}")
-
-    st.divider()
-
-    # Authority Matrix
-    st.header("Authority Matrix")
-    st.markdown("Define who can approve changes and at what authority level.")
-
-    with st.form("add_role_form", clear_on_submit=True):
-        role_name = st.text_input("Role name", placeholder="Ex: Project Director, PMO, Steering Committee")
-        authority_level = st.selectbox(
-            "Authority level",
-            options=list(AUTHORITY_LEVEL_LABELS.keys()),
-            format_func=lambda x: AUTHORITY_LEVEL_LABELS[x],
-        )
-        can_approve_changes = st.checkbox("Can approve changes")
-        max_impact_value = st.number_input("Max approvable impact (USD)", min_value=0.0, value=0.0, step=1000.0)
-        add_role = st.form_submit_button("Add Role")
-
-    if add_role:
-        if not role_name.strip():
-            st.warning("Please enter a role name.")
-        else:
+        if save_context:
+            context_text = proj_data.get("context_document")
+            context_filename = proj_data.get("context_filename")
+            if context_file:
+                ext = context_file.name.rsplit(".", 1)[-1].lower()
+                if ext == "pdf":
+                    context_text = extract_text_from_pdf(context_file)
+                elif ext == "docx":
+                    context_text = extract_text_from_docx(context_file)
+                elif ext == "txt":
+                    context_text = extract_text_from_txt(context_file)
+                context_filename = context_file.name
             try:
-                supabase_client.table("governance_roles").insert({
-                    "project_id": project_id,
-                    "role_name": role_name.strip(),
-                    "authority_level": authority_level,
-                    "can_approve_changes": can_approve_changes,
-                    "max_impact_value": max_impact_value,
-                }).execute()
-                st.success(f"Role '{role_name}' added successfully.")
+                supabase_client.table("projects").update({
+                    "description": description,
+                    "industry": industry,
+                    "project_type": project_type,
+                    "project_stage": project_stage,
+                    "context_document": context_text,
+                    "context_filename": context_filename,
+                }).eq("id", project_id).execute()
+                st.success("✅ Project context saved successfully.")
                 st.rerun()
             except Exception as e:
-                st.error(f"Failed to add role: {e}")
+                st.error(f"❌ Failed to save context: {e}")
 
-    # Upload de roles desde documento — ANTES de la lista existente
-    with st.expander("📂 Import roles from document (Word/Excel/PDF)"):
-        st.caption("Format your document as a table with columns: Role Name | Authority Level (1-5) | Can Approve (Yes/No) | Max Impact (USD)")
-        roles_file = st.file_uploader("Upload document with roles", type=["pdf", "docx", "txt"],
-                                       key="roles_import_uploader")
-        if roles_file and st.button("🔍 Parse and import roles", key="parse_roles_btn"):
-            ext = roles_file.name.rsplit(".", 1)[-1].lower()
+    # =========================================================================
+    # 2. GOVERNANCE DEFINITIONS
+    # =========================================================================
+    st.markdown("### Governance Definitions")
+
+    # ── 2A. AI-Assisted Generator ──────────────────────────────────────────
+    with st.expander("🤖 AI-Assisted Governance Generator", expanded=False):
+        st.markdown(
+            "Upload a project document and Nexus will automatically extract roles "
+            "and escalation rules. Review the proposal and activate with one click."
+        )
+
+        gen_tab_a, gen_tab_b = st.tabs([
+            "📎 Use reference document already uploaded",
+            "📤 Upload a new document"
+        ])
+
+        use_existing = False
+        use_new = False
+        gen_file = None
+
+        with gen_tab_a:
+            if proj_data.get("context_document") and proj_data.get("context_filename"):
+                st.success(f"✅ Reference document available: **{proj_data['context_filename']}**")
+                st.caption("Nexus will read this document to extract governance structure.")
+                use_existing = st.button(
+                    "🤖 Generate governance from reference document",
+                    key="gen_from_existing",
+                    type="primary",
+                    use_container_width=True
+                )
+            else:
+                st.info("ℹ️ No reference document uploaded yet. Save one in **Project Context** above first.")
+
+        with gen_tab_b:
+            st.caption("PEP, Project Charter, RACI matrix, contract, Delegation of Authority.")
+            gen_file = st.file_uploader(
+                "Choose file",
+                type=["pdf", "docx", "txt"],
+                key="governance_gen_uploader",
+                label_visibility="collapsed"
+            )
+            if gen_file:
+                st.success(f"✅ Ready: **{gen_file.name}**")
+                use_new = st.button(
+                    "🤖 Generate governance from this document",
+                    key="gen_from_new",
+                    type="primary",
+                    use_container_width=True
+                )
+
+        # Ejecutar generación
+        gen_source_text = None
+        gen_source_name = None
+
+        if use_existing and proj_data.get("context_document"):
+            gen_source_text = proj_data["context_document"]
+            gen_source_name = proj_data.get("context_filename", "reference document")
+        elif use_new and gen_file:
+            ext = gen_file.name.rsplit(".", 1)[-1].lower()
             if ext == "pdf":
-                raw_text = extract_text_from_pdf(roles_file)
+                gen_source_text = extract_text_from_pdf(gen_file)
             elif ext == "docx":
-                raw_text = extract_text_from_docx(roles_file)
+                gen_source_text = extract_text_from_docx(gen_file)
             else:
-                raw_text = extract_text_from_txt(roles_file)
+                gen_source_text = extract_text_from_txt(gen_file)
+            gen_source_name = gen_file.name
 
-            parsed_roles = parse_roles_from_text(raw_text)
-            if parsed_roles:
-                st.success(f"Found {len(parsed_roles)} role(s). Review and confirm:")
-                for i, role in enumerate(parsed_roles):
-                    st.markdown(f"**{role['role_name']}** — Level {role['authority_level']} — {'✓ Approves' if role['can_approve_changes'] else '✗ No approval'} — Max: ${role['max_impact_value']:,.0f}")
-                if st.button("✅ Import all roles", key="confirm_import_roles"):
-                    imported = 0
-                    for role in parsed_roles:
-                        try:
-                            supabase_client.table("governance_roles").insert({
-                                "project_id": project_id,
-                                **role
-                            }).execute()
-                            imported += 1
-                        except Exception:
-                            pass
-                    st.success(f"✅ {imported} role(s) imported successfully.")
+        if gen_source_text:
+            with st.spinner(f"🤖 Nexus is reading **{gen_source_name}** and extracting governance structure..."):
+                try:
+                    import json
+                    suggestion = auto_generate_governance(gen_source_text, selected_name)
+                    st.session_state.governance_suggestion = suggestion
+                    st.session_state.governance_suggestion_source = gen_source_name
                     st.rerun()
+                except json.JSONDecodeError as e:
+                    st.error(f"❌ Could not parse AI response. Try with a different document. Error: {e}")
+                except Exception as e:
+                    st.error(f"❌ Generation failed: {e}")
+
+    # ── 2B. Manual Input ───────────────────────────────────────────────────
+    with st.expander("✏️ Manual Roles & Rules Input", expanded=False):
+
+        # Import desde archivo
+        imp_tab_roles, imp_tab_rules = st.tabs(["📂 Import Roles from file", "📂 Import Rules from file"])
+
+        with imp_tab_roles:
+            st.caption("Format: Role Name | Authority Level (1-5) | Can Approve (Yes/No) | Max Impact (USD)")
+            roles_file = st.file_uploader("Upload document with roles", type=["pdf", "docx", "txt"],
+                                           key="roles_import_uploader")
+            if roles_file and st.button("🔍 Parse and import roles", key="parse_roles_btn"):
+                ext = roles_file.name.rsplit(".", 1)[-1].lower()
+                if ext == "pdf":
+                    raw_text = extract_text_from_pdf(roles_file)
+                elif ext == "docx":
+                    raw_text = extract_text_from_docx(roles_file)
+                else:
+                    raw_text = extract_text_from_txt(roles_file)
+                parsed_roles = parse_roles_from_text(raw_text)
+                if parsed_roles:
+                    st.success(f"Found {len(parsed_roles)} role(s). Review and confirm:")
+                    for i, role in enumerate(parsed_roles):
+                        st.markdown(f"**{role['role_name']}** — Level {role['authority_level']} — {'✓ Approves' if role['can_approve_changes'] else '✗ No approval'} — Max: ${role['max_impact_value']:,.0f}")
+                    if st.button("✅ Import all roles", key="confirm_import_roles"):
+                        imported = 0
+                        for role in parsed_roles:
+                            try:
+                                supabase_client.table("governance_roles").insert({"project_id": project_id, **role}).execute()
+                                imported += 1
+                            except Exception:
+                                pass
+                        st.success(f"✅ {imported} role(s) imported successfully.")
+                        st.rerun()
+                else:
+                    st.warning("No roles detected. Check your document format.")
+
+        with imp_tab_rules:
+            st.caption("Format: Rule Name | Category (decision/change/risk) | Keywords (comma-separated) | Required Level (1-5)")
+            rules_file = st.file_uploader("Upload document with rules", type=["pdf", "docx", "txt"],
+                                           key="rules_import_uploader")
+            if rules_file and st.button("🔍 Parse and import rules", key="parse_rules_btn"):
+                ext = rules_file.name.rsplit(".", 1)[-1].lower()
+                if ext == "pdf":
+                    raw_text = extract_text_from_pdf(rules_file)
+                elif ext == "docx":
+                    raw_text = extract_text_from_docx(rules_file)
+                else:
+                    raw_text = extract_text_from_txt(rules_file)
+                parsed_rules = parse_rules_from_text(raw_text)
+                if parsed_rules:
+                    st.success(f"Found {len(parsed_rules)} rule(s). Review and confirm:")
+                    for rule in parsed_rules:
+                        st.markdown(f"**{rule['rule_name']}** — {rule['category']} — Keywords: {', '.join(rule['trigger_keywords'])} — Level {rule['required_authority_level']} required")
+                    if st.button("✅ Import all rules", key="confirm_import_rules"):
+                        imported = 0
+                        for rule in parsed_rules:
+                            try:
+                                supabase_client.table("escalation_rules").insert({"project_id": project_id, **rule}).execute()
+                                imported += 1
+                            except Exception:
+                                pass
+                        st.success(f"✅ {imported} rule(s) imported successfully.")
+                        st.rerun()
+                else:
+                    st.warning("No rules detected. Check your document format.")
+
+        st.divider()
+
+        # Formulario manual de roles
+        st.markdown("**Add role manually**")
+        with st.form("add_role_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                role_name = st.text_input("Role name", placeholder="Ex: Project Director, PMO, Steering Committee")
+                authority_level = st.selectbox(
+                    "Authority level",
+                    options=list(AUTHORITY_LEVEL_LABELS.keys()),
+                    format_func=lambda x: AUTHORITY_LEVEL_LABELS[x],
+                )
+            with col2:
+                can_approve_changes = st.checkbox("Can approve changes")
+                max_impact_value = st.number_input("Max approvable impact (USD)", min_value=0.0, value=0.0, step=1000.0)
+            add_role = st.form_submit_button("➕ Add Role", type="primary")
+
+        if add_role:
+            if not role_name.strip():
+                st.warning("Please enter a role name.")
             else:
-                st.warning("No roles detected. Make sure your document has a table with Role Name | Level | Approve | Max Impact columns separated by | or ;")
+                try:
+                    supabase_client.table("governance_roles").insert({
+                        "project_id": project_id,
+                        "role_name": role_name.strip(),
+                        "authority_level": authority_level,
+                        "can_approve_changes": can_approve_changes,
+                        "max_impact_value": max_impact_value,
+                    }).execute()
+                    st.success(f"Role '{role_name}' added.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to add role: {e}")
+
+        st.divider()
+
+        # Formulario manual de rules
+        st.markdown("**Add escalation rule manually**")
+        with st.form("add_rule_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                rule_name = st.text_input("Rule name", placeholder="Ex: Fire safety changes require SC approval")
+                category = st.selectbox("Category", options=["decision", "change", "risk"])
+                is_active = st.checkbox("Rule active", value=True)
+            with col2:
+                trigger_keywords_raw = st.text_input("Trigger keywords", placeholder="comma-separated: fire, safety, permit")
+                required_authority_level = st.selectbox(
+                    "Required authority level",
+                    options=list(AUTHORITY_LEVEL_LABELS.keys()),
+                    format_func=lambda x: AUTHORITY_LEVEL_LABELS[x],
+                )
+            add_rule = st.form_submit_button("➕ Add Rule", type="primary")
+
+        if add_rule:
+            if not rule_name.strip():
+                st.warning("Please enter a rule name.")
+            else:
+                keywords_list = [k.strip() for k in trigger_keywords_raw.split(",") if k.strip()]
+                try:
+                    supabase_client.table("escalation_rules").insert({
+                        "project_id": project_id,
+                        "rule_name": rule_name.strip(),
+                        "category": category,
+                        "trigger_keywords": keywords_list,
+                        "required_authority_level": required_authority_level,
+                        "is_active": is_active,
+                    }).execute()
+                    st.success(f"Rule '{rule_name}' added.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to add rule: {e}")
+
+        st.caption("💡 Define keywords in the same language as your project documents.")
+
+    # =========================================================================
+    # 3. PROPUESTA AI — fuera de expanders, visible tras generación
+    # =========================================================================
+    if st.session_state.get("governance_suggestion"):
+        suggestion = st.session_state.governance_suggestion
+        source = st.session_state.get("governance_suggestion_source", "document")
+
+        st.divider()
+        st.success(f"✅ Nexus analyzed **{source}** and found the following governance structure:")
+        st.markdown("**Review and activate what you want to use:**")
+
+        suggested_roles = suggestion.get("roles", [])
+        roles_to_import = []
+        if suggested_roles:
+            st.markdown(f"**🏛️ Suggested Roles ({len(suggested_roles)})**")
+            for i, role in enumerate(suggested_roles):
+                col_check, col_info = st.columns([1, 8])
+                with col_check:
+                    include = st.checkbox("", value=True, key=f"include_role_{i}")
+                with col_info:
+                    approve_text = "✓ Can approve" if role.get("can_approve_changes") else "✗ No approval"
+                    max_text = f"Max: ${role.get('max_impact_value', 0):,.0f}" if role.get("max_impact_value", 0) > 0 else "No limit"
+                    st.markdown(f"**{role.get('role_name')}** — Level {role.get('authority_level')} — {approve_text} — {max_text}")
+                if include:
+                    roles_to_import.append(role)
+
+        suggested_rules = suggestion.get("rules", [])
+        rules_to_import = []
+        if suggested_rules:
+            st.markdown(f"**📋 Suggested Escalation Rules ({len(suggested_rules)})**")
+            for i, rule in enumerate(suggested_rules):
+                col_check, col_info = st.columns([1, 8])
+                with col_check:
+                    include = st.checkbox("", value=True, key=f"include_rule_{i}")
+                with col_info:
+                    keywords_str = ", ".join(rule.get("trigger_keywords", []))
+                    st.markdown(f"**{rule.get('rule_name')}** — {rule.get('category')} — Level {rule.get('required_authority_level')} required")
+                    st.caption(f"Keywords: {keywords_str}")
+                if include:
+                    rules_to_import.append(rule)
+
+        st.divider()
+        col_confirm, col_cancel = st.columns([2, 1])
+        with col_confirm:
+            if st.button("✅ Activate selected roles and rules", type="primary", use_container_width=True):
+                imported_roles = 0
+                imported_rules = 0
+                for role in roles_to_import:
+                    try:
+                        supabase_client.table("governance_roles").insert({
+                            "project_id": project_id,
+                            "role_name": role.get("role_name", "Unknown"),
+                            "authority_level": role.get("authority_level", 3),
+                            "can_approve_changes": role.get("can_approve_changes", False),
+                            "max_impact_value": role.get("max_impact_value", 0),
+                        }).execute()
+                        imported_roles += 1
+                    except Exception:
+                        pass
+                for rule in rules_to_import:
+                    try:
+                        supabase_client.table("escalation_rules").insert({
+                            "project_id": project_id,
+                            "rule_name": rule.get("rule_name", "Unknown"),
+                            "category": rule.get("category", "change"),
+                            "trigger_keywords": rule.get("trigger_keywords", []),
+                            "required_authority_level": rule.get("required_authority_level", 5),
+                            "is_active": True,
+                        }).execute()
+                        imported_rules += 1
+                    except Exception:
+                        pass
+                del st.session_state["governance_suggestion"]
+                if "governance_suggestion_source" in st.session_state:
+                    del st.session_state["governance_suggestion_source"]
+                st.success(f"✅ {imported_roles} role(s) and {imported_rules} rule(s) activated successfully.")
+                st.rerun()
+        with col_cancel:
+            if st.button("❌ Discard proposal", use_container_width=True):
+                del st.session_state["governance_suggestion"]
+                if "governance_suggestion_source" in st.session_state:
+                    del st.session_state["governance_suggestion_source"]
+                st.rerun()
+
+    # =========================================================================
+    # 4. ACTIVE ROLES — fuera de expanders
+    # =========================================================================
+    st.divider()
+    st.markdown("### Active Roles")
 
     roles_response = (
         supabase_client.table("governance_roles")
@@ -1674,24 +1979,67 @@ def render_governance_page(supabase_client: Client) -> None:
     roles_df = pd.DataFrame(roles_response.data) if roles_response.data else pd.DataFrame()
 
     if not roles_df.empty:
-        st.markdown("**Existing roles:**")
         for _, role in roles_df.iterrows():
-            col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 2, 1])
-            with col1:
-                st.text(role["role_name"])
-            with col2:
-                st.text(f"Level {role['authority_level']}")
-            with col3:
-                st.text("✓ Approves" if role["can_approve_changes"] else "✗ No approval")
-            with col4:
-                st.text(f"Max: ${role['max_impact_value']:,.0f}" if role["max_impact_value"] else "No limit")
-            with col5:
-                if st.button("🗑️", key=f"del_role_{role['id']}"):
-                    st.session_state.confirm_delete_role = role["id"]
-                    st.session_state.confirm_delete_role_name = role["role_name"]
+            role_id = role["id"]
+            if st.session_state.get("editing_role") == role_id:
+                with st.form(key=f"edit_role_form_{role_id}"):
+                    st.markdown(f"**Editing: {role['role_name']}**")
+                    ec1, ec2 = st.columns(2)
+                    with ec1:
+                        new_role_name = st.text_input("Role name", value=role["role_name"])
+                        new_authority = st.selectbox(
+                            "Authority level",
+                            options=list(AUTHORITY_LEVEL_LABELS.keys()),
+                            index=int(role["authority_level"]) - 1,
+                            format_func=lambda x: AUTHORITY_LEVEL_LABELS[x]
+                        )
+                    with ec2:
+                        new_can_approve = st.checkbox("Can approve changes", value=bool(role["can_approve_changes"]))
+                        new_max_impact = st.number_input(
+                            "Max approvable impact (USD)",
+                            min_value=0.0,
+                            value=float(role["max_impact_value"]) if role["max_impact_value"] else 0.0,
+                            step=1000.0
+                        )
+                    col_save, col_cancel_edit = st.columns(2)
+                    with col_save:
+                        save_edit = st.form_submit_button("💾 Save changes", type="primary", use_container_width=True)
+                    with col_cancel_edit:
+                        cancel_edit = st.form_submit_button("❌ Cancel", use_container_width=True)
+                if save_edit:
+                    supabase_client.table("governance_roles").update({
+                        "role_name": new_role_name,
+                        "authority_level": new_authority,
+                        "can_approve_changes": new_can_approve,
+                        "max_impact_value": new_max_impact,
+                    }).eq("id", role_id).execute()
+                    del st.session_state["editing_role"]
+                    st.toast("✅ Role updated")
                     st.rerun()
+                if cancel_edit:
+                    del st.session_state["editing_role"]
+                    st.rerun()
+            else:
+                col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 2, 1, 1])
+                with col1:
+                    st.text(role["role_name"])
+                with col2:
+                    st.text(f"Level {role['authority_level']}")
+                with col3:
+                    st.text("✓ Approves" if role["can_approve_changes"] else "✗ No approval")
+                with col4:
+                    st.text(f"Max: ${role['max_impact_value']:,.0f}" if role["max_impact_value"] else "No limit")
+                with col5:
+                    if st.button("✏️", key=f"edit_role_{role_id}", help="Edit"):
+                        st.session_state.editing_role = role_id
+                        st.rerun()
+                with col6:
+                    if st.button("🗑️", key=f"del_role_{role_id}"):
+                        st.session_state.confirm_delete_role = role_id
+                        st.session_state.confirm_delete_role_name = role["role_name"]
+                        st.rerun()
     else:
-        st.info("No roles defined yet for this project.")
+        st.info("No roles defined yet. Use the generator or manual input above.")
 
     if st.session_state.get("confirm_delete_role"):
         st.warning(f"⚠️ Delete role '{st.session_state.confirm_delete_role_name}'? This cannot be undone.")
@@ -1709,77 +2057,12 @@ def render_governance_page(supabase_client: Client) -> None:
                 del st.session_state["confirm_delete_role_name"]
                 st.rerun()
 
+    # =========================================================================
+    # 5. ACTIVE ESCALATION RULES — fuera de expanders
+    # =========================================================================
     st.divider()
-
-    # Escalation Rules
-    st.header("Escalation Rules")
-    st.markdown("Keywords in findings trigger mandatory escalation to the required authority level.")
-
-    with st.form("add_rule_form", clear_on_submit=True):
-        rule_name = st.text_input("Rule name", placeholder="Ex: Fire safety changes require SC approval")
-        category = st.selectbox("Category", options=["decision", "change", "risk"])
-        trigger_keywords_raw = st.text_input("Trigger keywords", placeholder="comma-separated: fire, safety, permit")
-        required_authority_level = st.selectbox(
-            "Required authority level",
-            options=list(AUTHORITY_LEVEL_LABELS.keys()),
-            format_func=lambda x: AUTHORITY_LEVEL_LABELS[x],
-        )
-        is_active = st.checkbox("Rule active", value=True)
-        add_rule = st.form_submit_button("Add Rule")
-
-    if add_rule:
-        if not rule_name.strip():
-            st.warning("Please enter a rule name.")
-        else:
-            keywords_list = [k.strip() for k in trigger_keywords_raw.split(",") if k.strip()]
-            try:
-                supabase_client.table("escalation_rules").insert({
-                    "project_id": project_id,
-                    "rule_name": rule_name.strip(),
-                    "category": category,
-                    "trigger_keywords": keywords_list,
-                    "required_authority_level": required_authority_level,
-                    "is_active": is_active,
-                }).execute()
-                st.success(f"Rule '{rule_name}' added successfully.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to add rule: {e}")
-
-    # Upload de rules desde documento — ANTES de la lista existente
-    with st.expander("📂 Import escalation rules from document (Word/Excel/PDF)"):
-        st.caption("Format: Rule Name | Category (decision/change/risk) | Keywords (comma-separated) | Required Level (1-5)")
-        rules_file = st.file_uploader("Upload document with rules", type=["pdf", "docx", "txt"],
-                                       key="rules_import_uploader")
-        if rules_file and st.button("🔍 Parse and import rules", key="parse_rules_btn"):
-            ext = rules_file.name.rsplit(".", 1)[-1].lower()
-            if ext == "pdf":
-                raw_text = extract_text_from_pdf(rules_file)
-            elif ext == "docx":
-                raw_text = extract_text_from_docx(rules_file)
-            else:
-                raw_text = extract_text_from_txt(rules_file)
-
-            parsed_rules = parse_rules_from_text(raw_text)
-            if parsed_rules:
-                st.success(f"Found {len(parsed_rules)} rule(s). Review and confirm:")
-                for rule in parsed_rules:
-                    st.markdown(f"**{rule['rule_name']}** — {rule['category']} — Keywords: {', '.join(rule['trigger_keywords'])} — Level {rule['required_authority_level']} required")
-                if st.button("✅ Import all rules", key="confirm_import_rules"):
-                    imported = 0
-                    for rule in parsed_rules:
-                        try:
-                            supabase_client.table("escalation_rules").insert({
-                                "project_id": project_id,
-                                **rule
-                            }).execute()
-                            imported += 1
-                        except Exception:
-                            pass
-                    st.success(f"✅ {imported} rule(s) imported successfully.")
-                    st.rerun()
-            else:
-                st.warning("No rules detected. Make sure your document has a table with Rule Name | Category | Keywords | Level columns separated by | or ;")
+    st.markdown("### Active Escalation Rules")
+    st.caption("💡 Define keywords in the same language as your project documents.")
 
     rules_response = (
         supabase_client.table("escalation_rules")
@@ -1790,31 +2073,79 @@ def render_governance_page(supabase_client: Client) -> None:
     rules_df = pd.DataFrame(rules_response.data) if rules_response.data else pd.DataFrame()
 
     if not rules_df.empty:
-        st.markdown("**Active escalation rules:**")
         for _, rule in rules_df.iterrows():
-            col1, col2, col3, col4, col5 = st.columns([2, 1, 3, 1, 1])
-            with col1:
-                st.text(rule["rule_name"])
-            with col2:
-                st.text(rule["category"])
-            with col3:
-                keywords = ", ".join(rule["trigger_keywords"]) if rule["trigger_keywords"] else "None"
-                keywords_label = f"Keywords: {keywords}"
-                if len(keywords) > 40:
-                    st.caption(keywords_label)
-                else:
-                    st.text(keywords_label)
-            with col4:
-                st.text(f"Level {rule['required_authority_level']} required")
-            with col5:
-                if st.button("🗑️", key=f"del_rule_{rule['id']}"):
-                    st.session_state.confirm_delete_rule = rule["id"]
-                    st.session_state.confirm_delete_rule_name = rule["rule_name"]
+            rule_id = rule["id"]
+            if st.session_state.get("editing_rule") == rule_id:
+                with st.form(key=f"edit_rule_form_{rule_id}"):
+                    st.markdown(f"**Editing: {rule['rule_name']}**")
+                    er1, er2 = st.columns(2)
+                    with er1:
+                        new_rule_name = st.text_input("Rule name", value=rule["rule_name"])
+                        new_category = st.selectbox(
+                            "Category",
+                            options=["decision", "change", "risk"],
+                            index=["decision", "change", "risk"].index(rule["category"])
+                            if rule["category"] in ["decision", "change", "risk"] else 1
+                        )
+                        new_is_active = st.checkbox("Rule active", value=bool(rule["is_active"]))
+                    with er2:
+                        current_keywords = ", ".join(rule["trigger_keywords"]) if rule["trigger_keywords"] else ""
+                        new_keywords_raw = st.text_area(
+                            "Keywords (comma-separated)",
+                            value=current_keywords,
+                            height=100,
+                        )
+                        new_required_level = st.selectbox(
+                            "Required authority level",
+                            options=list(AUTHORITY_LEVEL_LABELS.keys()),
+                            index=int(rule["required_authority_level"]) - 1,
+                            format_func=lambda x: AUTHORITY_LEVEL_LABELS[x]
+                        )
+                    col_save_r, col_cancel_r = st.columns(2)
+                    with col_save_r:
+                        save_rule_edit = st.form_submit_button("💾 Save changes", type="primary", use_container_width=True)
+                    with col_cancel_r:
+                        cancel_rule_edit = st.form_submit_button("❌ Cancel", use_container_width=True)
+                if save_rule_edit:
+                    new_keywords_list = [k.strip() for k in new_keywords_raw.split(",") if k.strip()]
+                    supabase_client.table("escalation_rules").update({
+                        "rule_name": new_rule_name,
+                        "category": new_category,
+                        "trigger_keywords": new_keywords_list,
+                        "required_authority_level": new_required_level,
+                        "is_active": new_is_active,
+                    }).eq("id", rule_id).execute()
+                    del st.session_state["editing_rule"]
+                    st.toast("✅ Rule updated")
                     st.rerun()
+                if cancel_rule_edit:
+                    del st.session_state["editing_rule"]
+                    st.rerun()
+            else:
+                col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 3, 1, 1, 1])
+                with col1:
+                    st.text(rule["rule_name"])
+                with col2:
+                    st.text(rule["category"])
+                with col3:
+                    keywords = ", ".join(rule["trigger_keywords"]) if rule["trigger_keywords"] else "None"
+                    if len(keywords) > 40:
+                        st.caption(f"Keywords: {keywords}")
+                    else:
+                        st.text(f"Keywords: {keywords}")
+                with col4:
+                    st.text(f"Level {rule['required_authority_level']}")
+                with col5:
+                    if st.button("✏️", key=f"edit_rule_{rule_id}", help="Edit"):
+                        st.session_state.editing_rule = rule_id
+                        st.rerun()
+                with col6:
+                    if st.button("🗑️", key=f"del_rule_{rule_id}"):
+                        st.session_state.confirm_delete_rule = rule_id
+                        st.session_state.confirm_delete_rule_name = rule["rule_name"]
+                        st.rerun()
     else:
-        st.info("No escalation rules defined yet for this project.")
-
-    st.caption("💡 Define keywords in the same language as your project documents.")
+        st.info("No escalation rules defined yet. Use the generator or manual input above.")
 
     if st.session_state.get("confirm_delete_rule"):
         st.warning(f"⚠️ Delete rule '{st.session_state.confirm_delete_rule_name}'? This cannot be undone.")
@@ -1831,6 +2162,7 @@ def render_governance_page(supabase_client: Client) -> None:
                 del st.session_state["confirm_delete_rule"]
                 del st.session_state["confirm_delete_rule_name"]
                 st.rerun()
+
 
 
 def render_audit_trail_page(supabase_client: Client) -> None:
