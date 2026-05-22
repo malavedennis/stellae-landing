@@ -1549,13 +1549,12 @@ def render_analysis_page(supabase_client: Client) -> None:
             st.warning("⚠️ Please enter a project name before analyzing.")
             st.stop()
         else:
-            env_path = PROJECT_ROOT / ".env"
             api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
 
-            if not env_path.exists() or not api_key:
+            if not api_key:
                 if is_auto_run:
                     del st.session_state["auto_run_analysis"]
-                st.error("❌ API Key not found. Please add ANTHROPIC_API_KEY to your .env file.")
+                st.error("❌ API Key not found. Please add ANTHROPIC_API_KEY to your environment variables.")
             else:
                 has_cached_results = (
                     not is_auto_run
