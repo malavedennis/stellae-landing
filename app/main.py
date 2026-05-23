@@ -40,16 +40,25 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 MAX_CHARS = 50_000
 
-# Rutas de herramientas OCR — hardcodeadas para Windows en español
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-POPPLER_PATH = r"C:\Archivos de programa\poppler\Library\bin"
+# Rutas de herramientas OCR — detección automática según sistema operativo
+import sys as _sys
+import shutil as _shutil
+
+if _sys.platform == "win32":
+    # Windows local — rutas hardcodeadas
+    TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    POPPLER_PATH   = r"C:\Archivos de programa\poppler\Library\bin"
+else:
+    # Linux / Railway — binarios instalados via packages.txt (apt)
+    TESSERACT_PATH = _shutil.which("tesseract") or "tesseract"
+    POPPLER_PATH   = None  # pdf2image encuentra poppler automáticamente en Linux
 
 # Configurar pytesseract
 try:
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 except Exception:
     pass
-MODEL_ID = "claude-sonnet-4-5"
+MODEL_ID = "claude-sonnet-4-6"
 
 AUTHORITY_LEVEL_LABELS = {
     1: "1 — Field Engineer (solo lectura)",
@@ -155,13 +164,14 @@ def extract_text_from_pdf(uploaded_file) -> str:
     # Si hay páginas sin texto digital, aplicar OCR
     if ocr_needed_pages:
         try:
-            images = convert_from_bytes(
-                pdf_bytes,
+            _pdf2img_kwargs = dict(
                 dpi=200,
-                poppler_path=POPPLER_PATH,
                 first_page=min(ocr_needed_pages) + 1,
                 last_page=max(ocr_needed_pages) + 1,
             )
+            if POPPLER_PATH:
+                _pdf2img_kwargs["poppler_path"] = POPPLER_PATH
+            images = convert_from_bytes(pdf_bytes, **_pdf2img_kwargs)
             for idx, page_num in enumerate(ocr_needed_pages):
                 if idx < len(images):
                     ocr_text = extract_text_with_ocr(images[idx])
@@ -2383,8 +2393,12 @@ st.markdown(
 # =============================================================================
 
 with st.sidebar:
-    st.markdown("# ◆ STELLAE")
-    st.markdown("Governance Intelligence")
+    st.markdown(
+        f'''<img src="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjIwIDU2IiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMjAiIGhlaWdodD0iNTYiPgogIDwhLS0gU2luIGZvbmRvIOKAlCB2YSBzb2JyZSBlbCBzaWRlYmFyIGRlIGxhIGFwcCAoIzBmMTQxOSkgLS0+CgogIDwhLS0gRVNUUkVMTEEgOCBQVU5UQVMg4oCUIG1pbmksIDQweDQwLCBjZW50cm8gMjIsMjggLS0+CiAgPCEtLSBOT1JURSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjIyLDggIDE3LDIzICAyMiwyNyIgIGZpbGw9IiMxRTNBNUYiLz4KICA8cG9seWdvbiBwb2ludHM9IjIyLDggIDIyLDI3ICAyNywyMyIgIGZpbGw9IiM2YThhYWEiLz4KICA8IS0tIE5PUkVTVEUgLS0+CiAgPHBvbHlnb24gcG9pbnRzPSIzNywxMyAgMjcsMjMgIDIyLDI3IiBmaWxsPSIjOGFhNGJjIi8+CiAgPHBvbHlnb24gcG9pbnRzPSIzNywxMyAgMjIsMjcgIDI5LDMwIiBmaWxsPSIjMmQ1MDgwIi8+CiAgPCEtLSBFU1RFIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNDIsMjggIDI5LDMwICAyMiwyNyIgZmlsbD0iIzJkNTA4MCIvPgogIDxwb2x5Z29uIHBvaW50cz0iNDIsMjggIDIyLDI3ICAyOSwyNCIgZmlsbD0iI0M5QTg0QyIvPgogIDwhLS0gU1VSRVNURSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjM3LDQzICAyOSwyNCAgMjIsMjciIGZpbGw9IiNjNGE4NGEiLz4KICA8cG9seWdvbiBwb2ludHM9IjM3LDQzICAyMiwyNyAgMjcsMzEiIGZpbGw9IiM3YTVjMTQiLz4KICA8IS0tIFNVUiAtLT4KICA8cG9seWdvbiBwb2ludHM9IjIyLDQ4ICAyNywzMSAgMjIsMjciIGZpbGw9IiMxNjI4NDAiLz4KICA8cG9seWdvbiBwb2ludHM9IjIyLDQ4ICAyMiwyNyAgMTcsMzEiIGZpbGw9IiM2YThhYWEiLz4KICA8IS0tIFNVUk9FU1RFIC0tPgogIDxwb2x5Z29uIHBvaW50cz0iNyw0MyAgMTcsMzEgIDIyLDI3IiAgZmlsbD0iIzhhYTRiYyIvPgogIDxwb2x5Z29uIHBvaW50cz0iNyw0MyAgMjIsMjcgIDE1LDI0IiAgZmlsbD0iIzJkNTA4MCIvPgogIDwhLS0gT0VTVEUgLS0+CiAgPHBvbHlnb24gcG9pbnRzPSIyLDI4ICAxNSwyNCAgMjIsMjciICBmaWxsPSIjQzlBODRDIi8+CiAgPHBvbHlnb24gcG9pbnRzPSIyLDI4ICAyMiwyNyAgMTUsMzAiICBmaWxsPSIjMTYyODQwIi8+CiAgPCEtLSBOT1JPRVNURSAtLT4KICA8cG9seWdvbiBwb2ludHM9IjcsMTMgIDE1LDMwICAyMiwyNyIgIGZpbGw9IiMyZDUwODAiLz4KICA8cG9seWdvbiBwb2ludHM9IjcsMTMgIDIyLDI3ICAxNywyMyIgIGZpbGw9IiM2YThhYWEiLz4KCiAgPCEtLSBURVhUTyBob3Jpem9udGFsIOKAlCBTVEVMTCBBIGVuIGJsYW5jbywgRSBlbiBnb2xkIC0tPgogIDwhLS0gUG9zaWNpw7NuOiB4IGRlc2RlIDU0LCB5IGNlbnRyYWRvIGVuIDI4IC0tPgogIDx0ZXh0IHg9IjU0IiAgeT0iMzMiIGZvbnQtZmFtaWx5PSInU2Vnb2UgVUknLCdIZWx2ZXRpY2EgTmV1ZScsQXJpYWwsc2Fucy1zZXJpZiIKICAgIGZvbnQtc2l6ZT0iMTgiIGZvbnQtd2VpZ2h0PSIzMDAiIGxldHRlci1zcGFjaW5nPSIxIiBmaWxsPSIjZTdlOWVhIj5TVEVMTDwvdGV4dD4KICA8dGV4dCB4PSIxMzgiIHk9IjMzIiBmb250LWZhbWlseT0iJ1NlZ29lIFVJJywnSGVsdmV0aWNhIE5ldWUnLEFyaWFsLHNhbnMtc2VyaWYiCiAgICBmb250LXNpemU9IjE4IiBmb250LXdlaWdodD0iMzAwIiBmaWxsPSIjZTdlOWVhIj5BPC90ZXh0PgogIDx0ZXh0IHg9IjE1NCIgeT0iMzMiIGZvbnQtZmFtaWx5PSInU2Vnb2UgVUknLCdIZWx2ZXRpY2EgTmV1ZScsQXJpYWwsc2Fucy1zZXJpZiIKICAgIGZvbnQtc2l6ZT0iMTgiIGZvbnQtd2VpZ2h0PSIzMDAiIGZpbGw9IiNDOUE4NEMiPkU8L3RleHQ+CgogIDwhLS0gTMOtbmVhIHNlcGFyYWRvcmEgLS0+CiAgPGxpbmUgeDE9IjQ5IiB5MT0iMTIiIHgyPSI0OSIgeTI9IjQ0IiBzdHJva2U9IiMyZDNhNGYiIHN0cm9rZS13aWR0aD0iMC44Ii8+Cjwvc3ZnPgo="
+            style="width:100%; max-width:210px; margin-bottom:4px; display:block;"
+            alt="Stellae logo">''',
+        unsafe_allow_html=True,
+    )
     st.divider()
 
     # =========================================================================
@@ -2451,4 +2465,3 @@ elif current_page == "🏛️ Governance":
 elif current_page == "📋 Audit Trail":
     render_audit_trail_page(supabase)
 
-# pip install fpdf2
