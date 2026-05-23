@@ -2338,9 +2338,12 @@ def render_audit_trail_page(supabase_client: Client) -> None:
 # CONFIGURACIÓN DE PÁGINA STREAMLIT
 # =============================================================================
 
+# Favicon embebido en base64 — funciona en local y Railway sin archivos externos
+_FAVICON_B64 = "data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgNjQgNjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0Ij4KICA8IS0tIEZvbmRvIG5hdnkgcmVkb25kZWFkbyAtLT4KICA8cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIGZpbGw9IiMxRTNBNUYiIHJ4PSIxMiIvPgoKICA8IS0tIEVzdHJlbGxhIGRlIDYgcHVudGFzIGVuIGdvbGQgLS0+CiAgPHBvbHlnb24gcG9pbnRzPSIzMiw4IDM1LDI0IDUwLDI0IDM5LDMzIDQzLDQ5IDMyLDQxIDIxLDQ5IDI1LDMzIDE0LDI0IDI5LDI0IgogICAgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQzlBODRDIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KCiAgPCEtLSBOb2RvcyBwcmluY2lwYWxlcyAtLT4KICA8Y2lyY2xlIGN4PSIzMiIgY3k9IjgiICByPSIzIiBmaWxsPSIjQzlBODRDIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSI1NiIgcj0iMyIgZmlsbD0iI0M5QTg0QyIvPgogIDxjaXJjbGUgY3g9IjUwIiBjeT0iMjQiIHI9IjIuMiIgZmlsbD0iI0M5QTg0QyIgb3BhY2l0eT0iMC43NSIvPgogIDxjaXJjbGUgY3g9IjQzIiBjeT0iNDkiIHI9IjIuMiIgZmlsbD0iI0M5QTg0QyIgb3BhY2l0eT0iMC43NSIvPgogIDxjaXJjbGUgY3g9IjIxIiBjeT0iNDkiIHI9IjIuMiIgZmlsbD0iI0M5QTg0QyIgb3BhY2l0eT0iMC43NSIvPgogIDxjaXJjbGUgY3g9IjE0IiBjeT0iMjQiIHI9IjIuMiIgZmlsbD0iI0M5QTg0QyIgb3BhY2l0eT0iMC43NSIvPgoKICA8IS0tIENlbnRybyAtLT4KICA8Y2lyY2xlIGN4PSIzMiIgY3k9IjMxIiByPSI0IiBmaWxsPSIjQzlBODRDIi8+Cjwvc3ZnPgo="
+
 st.set_page_config(
-    page_title="Stellae -- Governance Intelligence",
-    page_icon="✦",
+    page_title="Stellae — Governance Intelligence",
+    page_icon=_FAVICON_B64,
     layout="wide",
     initial_sidebar_state="expanded",
 )
