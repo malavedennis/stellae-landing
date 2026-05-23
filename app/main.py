@@ -1749,14 +1749,16 @@ def render_analysis_page(supabase_client: Client) -> None:
                         with col_rerun:
                             if st.button("🔄 Yes, analyze again", type="primary", use_container_width=True):
                                 st.session_state.force_reanalysis = True
-                                st.rerun()
+                                # NO hacer st.rerun() — los archivos se perderían
+                                # El flag se procesa en el próximo bloque del mismo ciclo
                         with col_cancel:
                             if st.button("❌ Cancel", use_container_width=True):
                                 st.session_state.force_reanalysis = False
-                        st.stop()
+                        if not st.session_state.get("force_reanalysis"):
+                            st.stop()
 
                     # Limpiar flag de re-análisis forzado
-                    if "force_reanalysis" in st.session_state:
+                    if st.session_state.get("force_reanalysis"):
                         del st.session_state["force_reanalysis"]
 
                     try:
