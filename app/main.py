@@ -143,9 +143,7 @@ Regla estricta: Si no encuentras hallazgos en alguna categoría, escribe: 'No se
 def get_system_prompt(language_code: str = "en") -> str:
     """Retorna el system prompt con la instrucción de idioma inyectada al inicio."""
     lang_instruction = LANGUAGE_INSTRUCTIONS.get(language_code, LANGUAGE_INSTRUCTIONS["en"])
-    return f"{lang_instruction}
-
-{BASE_SYSTEM_PROMPT}"
+    return lang_instruction + "\n\n" + BASE_SYSTEM_PROMPT
 
 
 # ======
@@ -1065,7 +1063,7 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
     pdf.cell(120, 10, L["title"], ln=False)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_xy(15, 20)
-    pdf.cell(180, 6, ff'{L["project"]}: {clean_for_pdf(project_name)}   |   {L["generated"]}: {datetime.now().strftime("%d/%m/%Y %H:%M")}   |   {L["confidential"]}', ln=True)
+    pdf.cell(180, 6, f'{L["project"]}: {clean_for_pdf(project_name)}   |   {L["generated"]}: {datetime.now().strftime("%d/%m/%Y %H:%M")}   |   {L["confidential"]}', ln=True)
     pdf.set_text_color(0, 0, 0)
     pdf.ln(8)
 
