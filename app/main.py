@@ -1197,10 +1197,34 @@ PDF_LABELS = {
 }
 
 
+def detect_content_language(text: str) -> str:
+    """Detecta si el texto está en español o no — heurística rápida sin API."""
+    spanish_markers = [
+        "Hallazgo", "Cambio Detectado", "Riesgo", "Decisión", "Alerta",
+        "Evidencia", "Consecuencias", "Gobernanza", "Proyecto", "el ", "la ",
+        "de ", "que ", "con ", "por ", "los ", "las ", "una ", "del "
+    ]
+    sample = text[:500].lower()
+    hits = sum(1 for m in spanish_markers if m.lower() in sample)
+    return "es" if hits >= 3 else "other"
+
+
 def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     """Traduce el contenido de findings al idioma del PDF usando Haiku."""
     if not findings:
         return findings
+
+    # Detectar idioma del primer finding — si ya está en el idioma correcto, no traducir
+    sample_content = findings[0].get("content", "") if findings else ""
+    detected = detect_content_language(sample_content)
+
+    # Skip traducción si:
+    # - target es inglés Y contenido no parece español
+    # - target es español Y contenido parece español
+    if target_lang == "en" and detected != "es":
+        return findings  # Ya está en inglés o idioma no español
+    if target_lang == "es" and detected == "es":
+        return findings  # Ya está en español
     # Siempre traducir — el análisis puede estar en cualquier idioma
 
     lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_lang), "English")
