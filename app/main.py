@@ -1197,6 +1197,10 @@ PDF_LABELS = {
 }
 
 
+# Logo PNG embebido en base64 para el PDF ejecutivo
+_STELLAE_LOGO_PNG_B64 = "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"
+
+
 def generate_executive_pdf(project_name: str, status_label: str, status_message: str,
                             all_findings: list, analyses: list,
                             language_code: str = "en") -> bytes:
@@ -1208,18 +1212,40 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
     pdf.add_page()
     pdf.set_margins(15, 15, 15)
 
-    # ── ENCABEZADO ──────────────────────────────────────────────────────────
+    # ── ENCABEZADO CON LOGO ─────────────────────────────────────────────────
     pdf.set_fill_color(15, 20, 25)
-    pdf.rect(0, 0, 210, 32, 'F')
+    pdf.rect(0, 0, 210, 36, 'F')
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.set_xy(15, 8)
-    pdf.cell(120, 10, clean_for_pdf(L["title"]), ln=False)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_xy(15, 20)
-    pdf.cell(180, 6, f'{L["project"]}: {clean_for_pdf(project_name)}   |   {L["generated"]}: {datetime.now().strftime("%d/%m/%Y %H:%M")}   |   {L["confidential"]}', ln=True)
+
+    # Logo PNG embebido
+    try:
+        import base64 as _b64, tempfile, os
+        _logo_bytes = _b64.b64decode(_STELLAE_LOGO_PNG_B64)
+        _tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        _tmp.write(_logo_bytes)
+        _tmp.close()
+        pdf.image(_tmp.name, x=8, y=5, w=26, h=26)
+        os.unlink(_tmp.name)
+    except Exception:
+        pass  # Si falla el logo, continúa sin él
+
+    # Título
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_xy(38, 7)
+    pdf.cell(140, 10, clean_for_pdf(L["title"]), ln=False)
+
+    # Gold accent line
+    pdf.set_draw_color(201, 168, 76)
+    pdf.set_line_width(0.5)
+    pdf.line(38, 19, 200, 19)
+
+    # Subtítulo
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(180, 180, 180)
+    pdf.set_xy(38, 21)
+    pdf.cell(170, 6, f'{L["project"]}: {clean_for_pdf(project_name)}   |   {L["generated"]}: {datetime.now().strftime("%d/%m/%Y %H:%M")}   |   {L["confidential"]}', ln=True)
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(8)
+    pdf.ln(12)
 
     # ── SECCIÓN 1: PROJECT STATUS ────────────────────────────────────────────
     status_text = status_label.replace("🔴", "").replace("🟡", "").replace("🟢", "").strip()
@@ -1622,18 +1648,22 @@ def render_dashboard_page(supabase_client: Client) -> None:
         st.markdown(f"*{status_message}*")
     with col_report:
         st.markdown("&nbsp;", unsafe_allow_html=True)
-        # Selector de idioma para el PDF
+        # Selector de idioma para el PDF — guardado en session_state
         pdf_lang_options = list(OUTPUT_LANGUAGES.keys())
+        default_pdf_lang = next(
+            (k for k, v in OUTPUT_LANGUAGES.items()
+             if v == st.session_state.get("output_language", "en")), "English"
+        )
         pdf_lang_selected = st.selectbox(
             "🌐 PDF language",
             options=pdf_lang_options,
             index=pdf_lang_options.index(
-                next((k for k, v in OUTPUT_LANGUAGES.items()
-                      if v == st.session_state.get("output_language", "en")), "English")
+                st.session_state.get("pdf_lang_selected", default_pdf_lang)
             ),
             key="pdf_lang_selector",
             label_visibility="collapsed",
         )
+        st.session_state.pdf_lang_selected = pdf_lang_selected
         pdf_lang_code = OUTPUT_LANGUAGES[pdf_lang_selected]
         if st.button("📄 Export Report", type="primary", use_container_width=True):
             try:
