@@ -1309,6 +1309,71 @@ def run_governance_pipeline(supabase_client: Client, project_id: str) -> dict:
     return findings_by_category
 
 
+def translate_analysis_results(target_language_code: str) -> None:
+    """Retraduce los resultados ya en session_state al idioma seleccionado."""
+    decisiones = st.session_state.get("decisiones", "")
+    cambios    = st.session_state.get("cambios", "")
+    riesgos    = st.session_state.get("riesgos", "")
+
+    if not decisiones and not cambios and not riesgos:
+        return
+
+    lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_language_code), "English")
+    lang_instruction = LANGUAGE_INSTRUCTIONS.get(target_language_code, LANGUAGE_INSTRUCTIONS["en"])
+
+    translation_prompt = f"""{lang_instruction}
+
+Translate the following governance analysis results into {lang_name}.
+Preserve EXACTLY the same structure, XML-like section markers, numbering, and formatting.
+Only translate the text content — do not add, remove, or reorder any findings.
+Do not translate proper nouns, project names, file names, or technical codes.
+
+=== DECISIONES ===
+{decisiones}
+
+=== CAMBIOS ===
+{cambios}
+
+=== RIESGOS ===
+{riesgos}
+
+Return ONLY the translated content in this exact format:
+<decisiones_huerfanas>
+[translated decisiones here]
+</decisiones_huerfanas>
+<cambios_ciegos>
+[translated cambios here]
+</cambios_ciegos>
+<riesgos_ocultos>
+[translated riesgos here]
+</riesgos_ocultos>"""
+
+    client = anthropic.Anthropic()
+    message = client.messages.create(
+        model=MODEL_ID,
+        max_tokens=8192,
+        messages=[{"role": "user", "content": translation_prompt}],
+    )
+    raw = message.content[0].text
+
+    new_decisiones = extract_tag(raw, "decisiones_huerfanas")
+    new_cambios    = extract_tag(raw, "cambios_ciegos")
+    new_riesgos    = extract_tag(raw, "riesgos_ocultos")
+
+    if new_decisiones:
+        st.session_state.decisiones = new_decisiones
+    if new_cambios:
+        st.session_state.cambios = new_cambios
+    if new_riesgos:
+        st.session_state.riesgos = new_riesgos
+
+    # Re-parsear findings para que los tabs se actualicen
+    num_docs  = st.session_state.analysis_meta.get("num_docs", 1) if st.session_state.analysis_meta else 1
+    char_count = st.session_state.analysis_meta.get("char_count", 0) if st.session_state.analysis_meta else 0
+    parse_and_store_results(raw, num_docs, char_count)
+    st.session_state.output_language = target_language_code
+
+
 def render_analysis_results_tabs() -> None:
     if st.session_state.get("decisiones") is None:
         return
@@ -1317,7 +1382,7 @@ def render_analysis_results_tabs() -> None:
 
     findings_by_category = st.session_state.findings_by_category
 
-    # ── SELECTOR DE IDIOMA ──────────────────────────────────────
+    # ── SELECTOR DE IDIOMA — traducción instantánea ─────────────
     lang_col, _ = st.columns([1, 3])
     with lang_col:
         lang_labels = list(OUTPUT_LANGUAGES.keys())
@@ -1328,12 +1393,13 @@ def render_analysis_results_tabs() -> None:
             options=lang_labels,
             index=lang_labels.index(current_label),
             key="lang_selector",
-            help="Select the language for the analysis output. The next analysis will use this language.",
+            help="Instantly translates the analysis results to the selected language.",
         )
         new_code = OUTPUT_LANGUAGES[selected_lang]
-        if new_code != st.session_state.get("output_language", "en"):
-            st.session_state.output_language = new_code
-            st.info(f"Language set to **{selected_lang}**. Re-run the analysis to apply.", icon="🌐")
+        if new_code != current_code:
+            with st.spinner(f"Translating to {selected_lang}..."):
+                translate_analysis_results(new_code)
+            st.rerun()
     # ────────────────────────────────────────────────────────────
 
     tab_decisiones, tab_cambios, tab_riesgos = st.tabs([
@@ -1664,6 +1730,7 @@ def render_analysis_page(supabase_client: Client) -> None:
             if st.button("🔄 Yes, analyze again", type="primary",
                          key="btn_force_reanalysis", use_container_width=True):
                 st.session_state.force_reanalysis = True
+                st.session_state.auto_run_analysis = True  # arranca el análisis automáticamente
                 del st.session_state["pending_duplicate_info"]
                 st.rerun()
         with col_cancel:
