@@ -1197,8 +1197,52 @@ PDF_LABELS = {
 }
 
 
+def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
+    """Traduce el contenido de findings al idioma del PDF usando Haiku."""
+    if target_lang == "en":
+        return findings  # Inglés es el idioma base — sin traducción
+    if not findings:
+        return findings
+
+    lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_lang), "English")
+
+    # Concatenar todos los contenidos para una sola llamada a la API
+    separator = "\n|||FINDING_SEPARATOR|||\n"
+    all_content = separator.join(f.get("content", "") for f in findings)
+
+    try:
+        client = anthropic.Anthropic()
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=8192,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Translate the following governance findings to {lang_name}. "
+                    "Each finding is separated by |||FINDING_SEPARATOR|||. "
+                    "Preserve ALL formatting, numbering, labels and structure exactly. "
+                    "Do NOT translate proper nouns, file names, project names, or technical codes. "
+                    "Return ONLY the translated text with the same separators, nothing else.\n\n"
+                    f"{all_content}"
+                )
+            }],
+        )
+        translated_parts = msg.content[0].text.strip().split("|||FINDING_SEPARATOR|||")
+
+        # Reconstruir findings con contenido traducido
+        translated_findings = []
+        for i, finding in enumerate(findings):
+            new_finding = dict(finding)
+            if i < len(translated_parts):
+                new_finding["content"] = translated_parts[i].strip()
+            translated_findings.append(new_finding)
+        return translated_findings
+    except Exception:
+        return findings  # Si falla la traducción, usar original
+
+
 # Logo PNG embebido en base64 para el PDF ejecutivo
-_STELLAE_LOGO_PNG_B64 = "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"
+_STELLAE_LOGO_PNG_B64 = "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"
 
 
 def generate_executive_pdf(project_name: str, status_label: str, status_message: str,
@@ -1668,8 +1712,10 @@ def render_dashboard_page(supabase_client: Client) -> None:
         if st.button("📄 Export Report", type="primary", use_container_width=True):
             try:
                 with st.spinner("Generating PDF..."):
+                    # Traducir findings al idioma del PDF si es necesario
+                    pdf_findings = translate_findings_for_pdf(all_findings, pdf_lang_code)
                     pdf_bytes = generate_executive_pdf(
-                        selected_name, status_label, status_message, all_findings, analyses,
+                        selected_name, status_label, status_message, pdf_findings, analyses,
                         language_code=pdf_lang_code,
                     )
                 file_name = f"stellae_report_{selected_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
