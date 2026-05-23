@@ -1656,6 +1656,23 @@ def render_analysis_page(supabase_client: Client) -> None:
                 unsafe_allow_html=True,
             )
 
+    # ── Aviso de duplicado pendiente (persiste entre reruns) ──────────────────
+    if st.session_state.get("pending_duplicate_info"):
+        st.warning(st.session_state.pending_duplicate_info)
+        col_rerun, col_cancel = st.columns([1, 1])
+        with col_rerun:
+            if st.button("🔄 Yes, analyze again", type="primary",
+                         key="btn_force_reanalysis", use_container_width=True):
+                st.session_state.force_reanalysis = True
+                del st.session_state["pending_duplicate_info"]
+                st.rerun()
+        with col_cancel:
+            if st.button("❌ Cancel", key="btn_cancel_reanalysis", use_container_width=True):
+                del st.session_state["pending_duplicate_info"]
+                st.rerun()
+        st.stop()
+    # ───────────────────────────────────────────────────────────────────────
+
     # Botones Analyze y New Analysis en la misma fila
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -1670,7 +1687,8 @@ def render_analysis_page(supabase_client: Client) -> None:
         st.warning("⚠️ This will clear the current analysis. Are you sure?")
         col_yes, col_no = st.columns([1, 1])
         with col_yes:
-            if st.button("✅ Yes, run new analysis", type="primary", use_container_width=True):
+            if st.button("✅ Yes, run new analysis", type="primary",
+                         key="btn_confirm_new", use_container_width=True):
                 for key in list(st.session_state.keys()):
                     if any(word in key.lower() for word in
                            ["decision", "cambio", "riesgo", "analys", "result", "finding", "confirm"]):
@@ -1678,7 +1696,7 @@ def render_analysis_page(supabase_client: Client) -> None:
                 st.session_state.auto_run_analysis = True
                 st.rerun()
         with col_no:
-            if st.button("❌ Cancel", use_container_width=True):
+            if st.button("❌ Cancel", key="btn_cancel_new", use_container_width=True):
                 st.session_state.show_confirm = False
                 st.rerun()
 
@@ -1741,23 +1759,11 @@ def render_analysis_page(supabase_client: Client) -> None:
                     if duplicate and not st.session_state.get("force_reanalysis"):
                         prev_date = format_analysis_date(duplicate.get("created_at", ""))
                         prev_docs = ", ".join(duplicate.get("documents_analyzed", []))
-                        st.warning(
-                            f"⚠️ These exact documents were already analyzed on **{prev_date}** "
-                            f"({prev_docs}). Running again will create a new record with the same content."
-                        )
-                        col_rerun, col_cancel = st.columns([1, 1])
-                        with col_rerun:
-                            if st.button("🔄 Yes, analyze again", type="primary", use_container_width=True):
-                                st.session_state.force_reanalysis = True
-                                # NO hacer st.rerun() — los archivos se perderían
-                                # El flag se procesa en el próximo bloque del mismo ciclo
-                        with col_cancel:
-                            if st.button("❌ Cancel", use_container_width=True):
-                                st.session_state.force_reanalysis = False
-                        if not st.session_state.get("force_reanalysis"):
-                            st.stop()
+                        # Guardar info del duplicado en session_state para sobrevivir el rerun
+                        st.session_state.pending_duplicate_info = f"⚠️ These exact documents were already analyzed on **{prev_date}** ({prev_docs}). Running again will create a new record with the same content."
+                        st.rerun()
 
-                    # Limpiar flag de re-análisis forzado
+                    # Limpiar flag de re-análisis forzado después de usarlo
                     if st.session_state.get("force_reanalysis"):
                         del st.session_state["force_reanalysis"]
 
