@@ -1201,7 +1201,8 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
                             all_findings: list, analyses: list,
                             language_code: str = "en") -> bytes:
     """Genera el PDF del reporte ejecutivo con diseño visual mejorado."""
-    L = PDF_LABELS.get(language_code, PDF_LABELS["en"])  # etiquetas del idioma
+    _raw_labels = PDF_LABELS.get(language_code, PDF_LABELS["en"])
+    L = {k: clean_for_pdf(v) if isinstance(v, str) else v for k, v in _raw_labels.items()}
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
@@ -1213,7 +1214,7 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 18)
     pdf.set_xy(15, 8)
-    pdf.cell(120, 10, L["title"], ln=False)
+    pdf.cell(120, 10, clean_for_pdf(L["title"]), ln=False)
     pdf.set_font("Helvetica", "", 9)
     pdf.set_xy(15, 20)
     pdf.cell(180, 6, f'{L["project"]}: {clean_for_pdf(project_name)}   |   {L["generated"]}: {datetime.now().strftime("%d/%m/%Y %H:%M")}   |   {L["confidential"]}', ln=True)
@@ -1360,7 +1361,7 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
     pdf.rect(0, pdf.get_y(), 210, 12, 'F')
     pdf.set_text_color(180, 180, 180)
     pdf.set_font("Helvetica", "I", 7)
-    pdf.cell(0, 12, L["footer"], align="C")
+    pdf.cell(0, 12, clean_for_pdf(L["footer"]), align="C")
 
     return bytes(pdf.output())
 
