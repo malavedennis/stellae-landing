@@ -1199,10 +1199,9 @@ PDF_LABELS = {
 
 def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     """Traduce el contenido de findings al idioma del PDF usando Haiku."""
-    if target_lang == "en":
-        return findings  # Inglés es el idioma base — sin traducción
     if not findings:
         return findings
+    # Siempre traducir — el análisis puede estar en cualquier idioma
 
     lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_lang), "English")
 
