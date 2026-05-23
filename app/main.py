@@ -1209,30 +1209,11 @@ def detect_content_language(text: str) -> str:
     return "es" if hits >= 3 else "other"
 
 
-def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
-    """Traduce el contenido de findings al idioma del PDF usando Haiku."""
-    if not findings:
-        return findings
-
-    # Detectar idioma del primer finding — si ya está en el idioma correcto, no traducir
-    sample_content = findings[0].get("content", "") if findings else ""
-    detected = detect_content_language(sample_content)
-
-    # Skip traducción si:
-    # - target es inglés Y contenido no parece español
-    # - target es español Y contenido parece español
-    if target_lang == "en" and detected != "es":
-        return findings  # Ya está en inglés o idioma no español
-    if target_lang == "es" and detected == "es":
-        return findings  # Ya está en español
-    # Siempre traducir — el análisis puede estar en cualquier idioma
-
+def translate_single_batch(texts: list, target_lang: str) -> list:
+    """Traduce una lista de textos con una sola llamada a Haiku."""
     lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_lang), "English")
-
-    # Concatenar todos los contenidos para una sola llamada a la API
-    separator = "\n|||FINDING_SEPARATOR|||\n"
-    all_content = separator.join(f.get("content", "") for f in findings)
-
+    separator = "\n|||SEP|||\n"
+    batch = separator.join(texts)
     try:
         client = anthropic.Anthropic()
         msg = client.messages.create(
@@ -1242,26 +1223,71 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
                 "role": "user",
                 "content": (
                     f"Translate the following governance findings to {lang_name}. "
-                    "Each finding is separated by |||FINDING_SEPARATOR|||. "
+                    "Each finding is separated by |||SEP|||. "
                     "Preserve ALL formatting, numbering, labels and structure exactly. "
                     "Do NOT translate proper nouns, file names, project names, or technical codes. "
                     "Return ONLY the translated text with the same separators, nothing else.\n\n"
-                    f"{all_content}"
+                    f"{batch}"
                 )
             }],
         )
-        translated_parts = msg.content[0].text.strip().split("|||FINDING_SEPARATOR|||")
-
-        # Reconstruir findings con contenido traducido
-        translated_findings = []
-        for i, finding in enumerate(findings):
-            new_finding = dict(finding)
-            if i < len(translated_parts):
-                new_finding["content"] = translated_parts[i].strip()
-            translated_findings.append(new_finding)
-        return translated_findings
+        parts = msg.content[0].text.strip().split("|||SEP|||")
+        return [p.strip() for p in parts]
     except Exception:
-        return findings  # Si falla la traducción, usar original
+        return texts
+
+
+def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
+    """Traduce findings al idioma del PDF. Usa cache en Supabase para evitar re-traducir."""
+    if not findings:
+        return findings
+
+    # Detectar si ya está en el idioma correcto
+    sample = findings[0].get("content", "")
+    detected = detect_content_language(sample)
+    if target_lang == "en" and detected != "es":
+        return findings
+    if target_lang == "es" and detected == "es":
+        return findings
+
+    # Separar findings con y sin traducción cacheada
+    needs_translation = []
+    needs_translation_idx = []
+    result = list(findings)  # copia para modificar
+
+    for i, finding in enumerate(findings):
+        cached = (finding.get("content_translations") or {}).get(target_lang)
+        if cached:
+            # Usar traducción cacheada — instantáneo
+            result[i] = dict(finding)
+            result[i]["content"] = cached
+        else:
+            needs_translation.append(finding.get("content", ""))
+            needs_translation_idx.append(i)
+
+    # Traducir solo los que no tienen cache
+    if needs_translation:
+        translated = translate_single_batch(needs_translation, target_lang)
+
+        # Guardar en Supabase y actualizar result
+        for j, idx in enumerate(needs_translation_idx):
+            translated_text = translated[j] if j < len(translated) else needs_translation[j]
+            result[idx] = dict(findings[idx])
+            result[idx]["content"] = translated_text
+
+            # Guardar en Supabase si el finding tiene ID
+            finding_id = findings[idx].get("id")
+            if finding_id:
+                try:
+                    existing = findings[idx].get("content_translations") or {}
+                    existing[target_lang] = translated_text
+                    supabase.table("findings").update(
+                        {"content_translations": existing}
+                    ).eq("id", finding_id).execute()
+                except Exception:
+                    pass  # No bloquear el PDF si falla el cache
+
+    return result
 
 
 # Logo PNG embebido en base64 para el PDF ejecutivo
@@ -1734,7 +1760,15 @@ def render_dashboard_page(supabase_client: Client) -> None:
         pdf_lang_code = OUTPUT_LANGUAGES[pdf_lang_selected]
         if st.button("📄 Export Report", type="primary", use_container_width=True):
             try:
-                with st.spinner("Generating PDF..."):
+                lang_label = next((k for k, v in OUTPUT_LANGUAGES.items() if v == pdf_lang_code), "English")
+                spinner_msg = (
+                    f"🌐 Translating findings to {lang_label} and generating PDF..."
+                    if pdf_lang_code != "en" or detect_content_language(
+                        all_findings[0].get("content", "") if all_findings else ""
+                    ) == "es"
+                    else "📄 Generating PDF report..."
+                )
+                with st.spinner(spinner_msg):
                     # Traducir findings al idioma del PDF si es necesario
                     pdf_findings = translate_findings_for_pdf(all_findings, pdf_lang_code)
                     pdf_bytes = generate_executive_pdf(
