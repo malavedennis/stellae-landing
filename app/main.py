@@ -89,6 +89,106 @@ LANGUAGE_INSTRUCTIONS = {
     "fr": "RÈGLE DE LANGUE CRITIQUE: Vous DEVEZ écrire toute votre réponse en FRANÇAIS, quelle que soit la langue des documents source. Tous les résultats, titres, descriptions, alertes et étiquettes doivent être en français.",
 }
 
+# Etiquetas de estructura del system prompt por idioma
+STRUCTURE_LABELS = {
+    "en": {
+        "role": "Act as a Principal Risk and Governance Auditor specialized in infrastructure, energy, and capital megaprojects (with the analytical rigor needed to prevent catastrophic failures like Berlin Brandenburg Airport or Crossrail). Your goal is to scan the documents provided by the user (minutes, reports, contracts, correspondence) and extract in a raw, objective, and corporate-jargon-free manner only three types of latent findings. Maintain a tone of professional skepticism: look for what parties are trying to omit, soften, or delegate informally.",
+        "critical_rule": "CRITICAL STRUCTURE RULE: Each finding must be a complete and indivisible unit. The same change or decision MUST NOT generate multiple separate findings. If a change has several consequences, all must be grouped under a single finding with numbered sub-alerts. This is mandatory.",
+        "orphan_label": "DECISION",
+        "change_label": "CHANGE",
+        "risk_label": "RISK",
+        "finding": "Finding",
+        "source_doc": "Source Document",
+        "gov_impact": "Governance Impact",
+        "mitigation": "Mitigation Action",
+        "change_detected": "Change Detected",
+        "cross_consequences": "Cross Consequences",
+        "alert": "ALERT",
+        "financial_exposure": "Financial Exposure Level",
+        "alert_signal": "Alert Signal",
+        "evidence": "Evidence",
+        "escalation_consequences": "Consequences if Not Escalated",
+        "days_30": "30 days",
+        "days_60": "60 days",
+        "inaction_cost": "Cost of Inaction",
+        "no_findings": "No anomalies detected under current governance parameters in this section.",
+        "steering": "Steering Committee",
+        "hours_72": "next 48-72 hours",
+    },
+    "es": {
+        "role": "Actúa como un Auditor Principal de Riesgos y Gobernanza especializado en megaproyectos de infraestructura, energía y capital (con el rigor analítico necesario para evitar fallas catastróficas como las del Aeropuerto de Berlín-Brandenburgo o Crossrail). Tu objetivo es escanear los documentos provistos por el usuario (minutas, reportes, contratos, correspondencia) y extraer de forma cruda, objetiva y sin adornos corporativos únicamente tres tipos de hallazgos latentes. Es crucial que asumas un tono de escepticismo profesional: busca lo que las partes intentan omitir, suavizar o delegar de manera informal.",
+        "critical_rule": "REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio.",
+        "orphan_label": "DECISIÓN",
+        "change_label": "CAMBIO",
+        "risk_label": "RIESGO",
+        "finding": "Hallazgo",
+        "source_doc": "Documento de Origen",
+        "gov_impact": "Impacto en Gobernanza",
+        "mitigation": "Acción de Mitigación",
+        "change_detected": "Cambio Detectado",
+        "cross_consequences": "Consecuencias Cruzadas",
+        "alert": "ALERTA",
+        "financial_exposure": "Nivel de Exposición Financiera",
+        "alert_signal": "Señal de Alerta",
+        "evidence": "Evidencia",
+        "escalation_consequences": "Consecuencias si No Se Escala",
+        "days_30": "A 30 días",
+        "days_60": "A 60 días",
+        "inaction_cost": "Costo de la Inacción",
+        "no_findings": "No se detectaron anomalías bajo los parámetros de gobernanza actuales en esta sección.",
+        "steering": "Comité Directivo",
+        "hours_72": "próximas 48-72 horas",
+    },
+    "pt": {
+        "role": "Aja como um Auditor Principal de Riscos e Governança especializado em megaprojetos de infraestrutura, energia e capital. Seu objetivo é escanear os documentos fornecidos pelo usuário e extrair de forma crua e objetiva apenas três tipos de achados latentes.",
+        "critical_rule": "REGRA DE ESTRUTURA CRÍTICA: Cada achado deve ser uma unidade completa e indivisível. A mesma mudança ou decisão NÃO deve gerar múltiplos achados separados. Esto é mandatório.",
+        "orphan_label": "DECISÃO",
+        "change_label": "MUDANÇA",
+        "risk_label": "RISCO",
+        "finding": "Achado",
+        "source_doc": "Documento de Origem",
+        "gov_impact": "Impacto na Governança",
+        "mitigation": "Ação de Mitigação",
+        "change_detected": "Mudança Detectada",
+        "cross_consequences": "Consequências Cruzadas",
+        "alert": "ALERTA",
+        "financial_exposure": "Nível de Exposição Financeira",
+        "alert_signal": "Sinal de Alerta",
+        "evidence": "Evidência",
+        "escalation_consequences": "Consequências se Não Escalado",
+        "days_30": "30 dias",
+        "days_60": "60 dias",
+        "inaction_cost": "Custo da Inação",
+        "no_findings": "Nenhuma anomalia detectada sob os parâmetros de governança atuais nesta seção.",
+        "steering": "Comitê Diretivo",
+        "hours_72": "próximas 48-72 horas",
+    },
+    "fr": {
+        "role": "Agissez en tant qu'Auditeur Principal des Risques et de la Gouvernance spécialisé dans les mégaprojets d'infrastructure, d'énergie et de capital. Votre objectif est de scanner les documents fournis et d'extraire uniquement trois types de constats latents.",
+        "critical_rule": "RÈGLE DE STRUCTURE CRITIQUE: Chaque constat doit être une unité complète et indivisible. Le même changement ou décision NE DOIT PAS générer plusieurs constats séparés. C'est obligatoire.",
+        "orphan_label": "DÉCISION",
+        "change_label": "CHANGEMENT",
+        "risk_label": "RISQUE",
+        "finding": "Constat",
+        "source_doc": "Document Source",
+        "gov_impact": "Impact sur la Gouvernance",
+        "mitigation": "Action de Mitigation",
+        "change_detected": "Changement Détecté",
+        "cross_consequences": "Conséquences Croisées",
+        "alert": "ALERTE",
+        "financial_exposure": "Niveau d'Exposition Financière",
+        "alert_signal": "Signal d'Alerte",
+        "evidence": "Preuves",
+        "escalation_consequences": "Conséquences si Non Escaladé",
+        "days_30": "30 jours",
+        "days_60": "60 jours",
+        "inaction_cost": "Coût de l'Inaction",
+        "no_findings": "Aucune anomalie détectée sous les paramètres de gouvernance actuels dans cette section.",
+        "steering": "Comité de Pilotage",
+        "hours_72": "prochaines 48-72 heures",
+    },
+}
+
 BASE_SYSTEM_PROMPT = """Actúa como un Auditor Principal de Riesgos y Gobernanza especializado en megaproyectos de infraestructura, energía y capital (con el rigor analítico necesario para evitar fallas catastróficas como las del Aeropuerto de Berlín-Brandenburgo o Crossrail). Tu objetivo es escanear los documentos provistos por el usuario (minutas, reportes, contratos, correspondencia) y extraer de forma cruda, objetiva y sin adornos corporativos únicamente tres tipos de hallazgos latentes. Es crucial que asumas un tono de escepticismo profesional: busca lo que las partes intentan omitir, suavizar o delegar de manera informal.
 
 REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio.
@@ -141,9 +241,62 @@ Regla estricta: Si no encuentras hallazgos en alguna categoría, escribe: 'No se
 
 
 def get_system_prompt(language_code: str = "en") -> str:
-    """Retorna el system prompt con la instrucción de idioma inyectada al inicio."""
-    lang_instruction = LANGUAGE_INSTRUCTIONS.get(language_code, LANGUAGE_INSTRUCTIONS["en"])
-    return lang_instruction + "\n\n" + BASE_SYSTEM_PROMPT
+    """Construye el system prompt completo en el idioma seleccionado."""
+    lang = LANGUAGE_INSTRUCTIONS.get(language_code, LANGUAGE_INSTRUCTIONS["en"])
+    L = STRUCTURE_LABELS.get(language_code, STRUCTURE_LABELS["en"])
+
+    prompt = f"""{lang}
+
+{L["role"]}
+
+{L["critical_rule"]}
+
+You must structure your response strictly using the following XML tags:
+
+<decisiones_huerfanas>
+For each pending, informally approved, or limbo decision, use EXACTLY this format:
+
+{L["orphan_label"]} [N]: [Brief title]
+- {L["finding"]}: Precise description of what was decided or what is in limbo.
+- {L["source_doc"]}: File name, specific point or topic where it appears.
+- {L["gov_impact"]}: Why the absence of a formal owner puts the project at risk.
+- {L["mitigation"]}: What the {L["steering"]} must demand in the {L["hours_72"]}.
+
+[Separate each finding with a blank line]
+</decisiones_huerfanas>
+
+<cambios_ciegos>
+For each scope, design, engineering, or contract change lacking formal analysis, use EXACTLY this format:
+
+{L["change_label"]} [N]: [Brief title]
+- {L["change_detected"]}: What was modified, how, and with what informal justification.
+- {L["cross_consequences"]}:
+  {L["alert"]} 1 — [Affected area]: Specific impact description.
+  {L["alert"]} 2 — [Affected area]: Specific impact description.
+  {L["alert"]} 3 — [Affected area]: Specific impact description.
+  [Add all relevant alerts — do not limit the number]
+- {L["financial_exposure"]}: HIGH / MEDIUM / LOW — with estimated quantitative justification.
+
+[Separate each change with a blank line]
+</cambios_ciegos>
+
+<riesgos_ocultos>
+For each friction pattern or near-miss the team is normalizing, use EXACTLY this format:
+
+{L["risk_label"]} [N]: [Brief title]
+- {L["alert_signal"]}: The detected pattern and why it is an early warning signal.
+- {L["evidence"]}: Specific references to documents showing recurrence or pattern.
+- {L["escalation_consequences"]}:
+  1. {L["days_30"]}: What happens if no action is taken in the next month.
+  2. {L["days_60"]}: What happens if it continues to be ignored.
+- {L["inaction_cost"]}: Estimated economic or schedule impact if it explodes.
+
+[Separate each risk with a blank line]
+</riesgos_ocultos>
+
+Strict rule: If you find no findings in a category, write: '{L["no_findings"]}'. Do not invent data. Do not fragment the same problem into multiple findings."""
+
+    return prompt
 
 
 # ======
@@ -1310,7 +1463,7 @@ def run_governance_pipeline(supabase_client: Client, project_id: str) -> dict:
 
 
 def translate_analysis_results(target_language_code: str) -> None:
-    """Retraduce los resultados ya en session_state al idioma seleccionado."""
+    """Retraduce los resultados ya en session_state al idioma seleccionado — 3 llamadas paralelas."""
     decisiones = st.session_state.get("decisiones", "")
     cambios    = st.session_state.get("cambios", "")
     riesgos    = st.session_state.get("riesgos", "")
@@ -1319,59 +1472,53 @@ def translate_analysis_results(target_language_code: str) -> None:
         return
 
     lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_language_code), "English")
-    lang_instruction = LANGUAGE_INSTRUCTIONS.get(target_language_code, LANGUAGE_INSTRUCTIONS["en"])
 
-    translation_prompt = f"""{lang_instruction}
+    def translate_section(text: str) -> str:
+        """Traduce una sección individual — prompt mínimo para máxima velocidad."""
+        if not text or "No se detectaron" in text or "No findings" in text:
+            return text
+        client = anthropic.Anthropic()
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",  # Haiku: 5x más rápido para traducción simple
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Translate the following governance analysis text COMPLETELY to {lang_name}. "
+                    "Translate EVERYTHING including labels like 'Cambio Detectado', 'Hallazgo', "
+                    "'Consecuencias Cruzadas', 'Señal de Alerta', 'Evidencia', 'Acción de Mitigación', "
+                    "'Impacto en Gobernanza', 'Costo de la Inacción', 'Nivel de Exposición Financiera'. "
+                    "Keep section headers like DECISIÓN [N], CAMBIO [N], RIESGO [N], ALERTA N in the target language. "
+                    "Do NOT translate proper nouns, project names, file names, or company names. "
+                    "Return ONLY the translated text, nothing else.\n\n"
+                    f"{text}"
+                )
+            }],
+        )
+        return msg.content[0].text.strip()
 
-Translate the following governance analysis results into {lang_name}.
-Preserve EXACTLY the same structure, XML-like section markers, numbering, and formatting.
-Only translate the text content — do not add, remove, or reorder any findings.
-Do not translate proper nouns, project names, file names, or technical codes.
+    # Traducir las 3 secciones secuencialmente con Haiku (rápido)
+    new_decisiones = translate_section(decisiones)
+    new_cambios    = translate_section(cambios)
+    new_riesgos    = translate_section(riesgos)
 
-=== DECISIONES ===
-{decisiones}
-
-=== CAMBIOS ===
-{cambios}
-
-=== RIESGOS ===
-{riesgos}
-
-Return ONLY the translated content in this exact format:
-<decisiones_huerfanas>
-[translated decisiones here]
-</decisiones_huerfanas>
-<cambios_ciegos>
-[translated cambios here]
-</cambios_ciegos>
-<riesgos_ocultos>
-[translated riesgos here]
-</riesgos_ocultos>"""
-
-    client = anthropic.Anthropic()
-    message = client.messages.create(
-        model=MODEL_ID,
-        max_tokens=8192,
-        messages=[{"role": "user", "content": translation_prompt}],
-    )
-    raw = message.content[0].text
-
-    new_decisiones = extract_tag(raw, "decisiones_huerfanas")
-    new_cambios    = extract_tag(raw, "cambios_ciegos")
-    new_riesgos    = extract_tag(raw, "riesgos_ocultos")
-
-    if new_decisiones:
-        st.session_state.decisiones = new_decisiones
-    if new_cambios:
-        st.session_state.cambios = new_cambios
-    if new_riesgos:
-        st.session_state.riesgos = new_riesgos
-
-    # Re-parsear findings para que los tabs se actualicen
-    num_docs  = st.session_state.analysis_meta.get("num_docs", 1) if st.session_state.analysis_meta else 1
-    char_count = st.session_state.analysis_meta.get("char_count", 0) if st.session_state.analysis_meta else 0
-    parse_and_store_results(raw, num_docs, char_count)
+    # Actualizar session_state directamente
+    st.session_state.decisiones = new_decisiones
+    st.session_state.cambios    = new_cambios
+    st.session_state.riesgos    = new_riesgos
     st.session_state.output_language = target_language_code
+
+    # Reconstruir findings_by_category para que los tabs se actualicen
+    findings_list = build_findings_list(new_decisiones, new_cambios, new_riesgos)
+    project_id = st.session_state.get("project_id")
+    if project_id:
+        try:
+            findings_list = apply_governance_rules(project_id, findings_list, supabase)
+        except Exception:
+            pass
+    findings_by_category = rebuild_findings_by_category(findings_list)
+    st.session_state.findings_by_category = findings_by_category
+    st.session_state.findings_list = findings_list
 
 
 def render_analysis_results_tabs() -> None:
@@ -1399,6 +1546,9 @@ def render_analysis_results_tabs() -> None:
         if new_code != current_code:
             with st.spinner(f"Translating to {selected_lang}..."):
                 translate_analysis_results(new_code)
+            # Limpiar el widget para que refleje el nuevo idioma en el rerun
+            if "lang_selector" in st.session_state:
+                del st.session_state["lang_selector"]
             st.rerun()
     # ────────────────────────────────────────────────────────────
 
