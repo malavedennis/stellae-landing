@@ -2019,11 +2019,17 @@ def render_analysis_page(supabase_client: Client) -> None:
                 elif is_auto_run and "auto_run_analysis" in st.session_state:
                     del st.session_state["auto_run_analysis"]
 
-    if (
+    # Mostrar resultados si existen — con o sin archivos en el uploader
+    # La firma solo se verifica si hay archivos cargados actualmente
+    has_results = (
         st.session_state.get("decisiones") is not None
         and st.session_state.get("findings_by_category") is not None
-        and current_signature == st.session_state.get("last_analyzed_signature")
-    ):
+    )
+    files_match = (
+        not uploaded_files  # Sin archivos — mostrar últimos resultados siempre
+        or current_signature == st.session_state.get("last_analyzed_signature")
+    )
+    if has_results and files_match:
         render_analysis_results_tabs()
 
 
