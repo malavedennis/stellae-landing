@@ -1730,6 +1730,51 @@ def render_project_badge(project_name: str) -> None:
     )
 
 
+def _render_project_management_panel(project_id: str, project_name: str, supabase_client) -> None:
+    """Panel de gestion del proyecto — Rename y Delete. Siempre visible en el Dashboard."""
+
+    col_rename, col_spacer, col_danger = st.columns([2, 2, 1])
+
+    # ── RENAME ──────────────────────────────────────────────────────────────
+    with col_rename:
+        if st.button("✏️ Rename project", use_container_width=True, key="btn_rename_project"):
+            st.session_state.show_rename_form = not st.session_state.get("show_rename_form", False)
+
+    if st.session_state.get("show_rename_form"):
+        with st.form("rename_project_form"):
+            new_name = st.text_input("New project name", value=project_name,
+                                     placeholder="Enter new name")
+            col_save, col_cancel = st.columns([1, 1])
+            with col_save:
+                save = st.form_submit_button("💾 Save", type="primary", use_container_width=True)
+            with col_cancel:
+                cancel = st.form_submit_button("Cancel", use_container_width=True)
+
+        if save and new_name.strip() and new_name.strip() != project_name:
+            try:
+                supabase_client.table("projects").update(
+                    {"name": new_name.strip()}
+                ).eq("id", project_id).execute()
+                st.session_state.project_name = new_name.strip()
+                st.session_state.show_rename_form = False
+                st.success(f"✅ Project renamed to '{new_name.strip()}'")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Could not rename: {e}")
+        elif cancel:
+            st.session_state.show_rename_form = False
+            st.rerun()
+
+    # ── DELETE ───────────────────────────────────────────────────────────────
+    with col_danger:
+        if st.button("🗑️ Delete", type="secondary", use_container_width=True,
+                     key="btn_delete_project"):
+            st.session_state.delete_project_step1 = True
+            st.session_state.delete_project_id = project_id
+            st.session_state.delete_project_name = project_name
+            st.rerun()
+
+
 def render_dashboard_page(supabase_client: Client) -> None:
     """Página Dashboard Ejecutivo -- semáforo, KPIs, timeline y export PDF."""
     st.title("📊 Executive Dashboard")
@@ -1759,6 +1804,10 @@ def render_dashboard_page(supabase_client: Client) -> None:
 
     if not analyses_response.data:
         st.info("ℹ️ No analyses found for this project. Go to Analysis to run the first one.")
+
+        # ── PANEL DE GESTION DEL PROYECTO (visible aunque no haya análisis) ──
+        st.divider()
+        _render_project_management_panel(project_id, selected_name, supabase_client)
         return
 
     analyses = analyses_response.data
@@ -1918,15 +1967,9 @@ def render_dashboard_page(supabase_client: Client) -> None:
                 else:
                     st.caption("✅ No governance violations in this analysis.")
 
-    # --- Zona de peligro — botón discreto al final del Dashboard ---
+    # --- Zona de gestión — siempre visible al final del Dashboard ---
     st.divider()
-    col_spacer, col_danger = st.columns([4, 1])
-    with col_danger:
-        if st.button("🗑️ Delete project", type="secondary", use_container_width=True):
-            st.session_state.delete_project_step1 = True
-            st.session_state.delete_project_id = project_id
-            st.session_state.delete_project_name = selected_name
-            st.rerun()
+    _render_project_management_panel(project_id, selected_name, supabase_client)
 
     if st.session_state.get("delete_project_step1") and        st.session_state.get("delete_project_id") == project_id:
         proj_to_delete = st.session_state.get("delete_project_name", "")
@@ -2934,19 +2977,22 @@ if not st.session_state.get("authenticated", False):
             unsafe_allow_html=True
         )
 
-        pwd = st.text_input(
-            "Access code",
-            type="password",
-            placeholder="Enter your access code",
-            label_visibility="collapsed",
-        )
+        with st.form("login_form", clear_on_submit=False):
+            pwd = st.text_input(
+                "Access code",
+                type="password",
+                placeholder="Enter your access code",
+                label_visibility="collapsed",
+            )
+            submitted = st.form_submit_button(
+                "Enter →", type="primary", use_container_width=True
+            )
 
-        if st.button("Enter →", type="primary", use_container_width=True):
+        if submitted:
             if _APP_PASSWORD and pwd == _APP_PASSWORD:
                 st.session_state.authenticated = True
                 st.rerun()
             elif not _APP_PASSWORD:
-                # Si no hay contraseña configurada en Railway, bloquear acceso
                 st.error("❌ Access not configured. Contact the administrator.")
             else:
                 st.error("❌ Invalid access code.")
@@ -3091,10 +3137,15 @@ with st.sidebar:
                         project_name.strip(),
                         project_description.strip()
                     )
+                    # Seleccionar el proyecto recién creado automáticamente
                     st.session_state.project_name = project_name.strip()
                     st.session_state.project_description = project_description.strip()
                     st.session_state.project_id = new_pid
-                    st.success(f"✅ Project '{project_name.strip()}' created!")
+                    # Limpiar campos del formulario
+                    if "new_project_name_input" in st.session_state:
+                        del st.session_state["new_project_name_input"]
+                    if "first_project_name_input" in st.session_state:
+                        del st.session_state["first_project_name_input"]
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Could not create project: {e}")
