@@ -1336,9 +1336,7 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     # Detectar si el contenido ya está en el idioma target — skip si coincide
     sample = findings[0].get("content", "")
     detected = detect_content_language(sample)
-    # DEBUG TEMPORAL — eliminar después
-    import streamlit as _st
-    _st.caption(f"🔍 DEBUG: target={target_lang} | detected={detected} | sample='{sample[:80]}'")
+
     if detected == target_lang:
         return findings  # Ya está en el idioma correcto — no traducir
 
@@ -1348,17 +1346,15 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     result = list(findings)  # copia para modificar
 
     for i, finding in enumerate(findings):
-        cached = (finding.get("content_translations") or {}).get(target_lang)
-        if cached:
+        translations = finding.get("content_translations") or {}
+        cached = translations.get(target_lang)
+        # Verificar que el cache es válido — no None, no string vacío, no whitespace
+        if cached and isinstance(cached, str) and len(cached.strip()) > 20:
             result[i] = dict(finding)
             result[i]["content"] = cached
         else:
             needs_translation.append(finding.get("content", ""))
             needs_translation_idx.append(i)
-
-    # DEBUG TEMPORAL
-    import streamlit as _st2
-    _st2.caption(f"🔍 DEBUG2: needs_translation={len(needs_translation)} | cached={len(findings)-len(needs_translation)}")
 
     # Traducir solo los que no tienen cache
     if needs_translation:
