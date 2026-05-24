@@ -2271,21 +2271,20 @@ def render_governance_page(supabase_client: Client) -> None:
         # ── Estado actual del contexto — siempre visible ──────────────────
         has_context = bool(proj_data.get("context_filename") or proj_data.get("industry"))
         if has_context:
+            # Construir HTML por partes — evita problemas con comillas anidadas en f-string
+            _ref_line = ""
+            _meta_line = ""
+            if proj_data.get("context_filename"):
+                _ref_line = f"<div style='color:#e7e9ea; font-size:13px; margin-bottom:4px;'>📄 <b>Ref doc:</b> {proj_data['context_filename']}</div>"
+            _meta_parts = [x for x in [proj_data.get("industry",""), proj_data.get("project_type",""), proj_data.get("project_stage","")] if x]
+            if _meta_parts:
+                _meta_line = f"<div style='color:#8899a6; font-size:12px;'>{' · '.join(_meta_parts)}</div>"
             st.markdown(
-                f'''<div style="
-                    background: rgba(30,58,95,0.4);
-                    border: 1px solid rgba(201,168,76,0.4);
-                    border-left: 3px solid #C9A84C;
-                    border-radius: 8px;
-                    padding: 10px 16px;
-                    margin-bottom: 16px;
-                ">
-                    <div style="color:#C9A84C; font-size:11px; letter-spacing:1px; margin-bottom:6px;">
-                        ✅ CONTEXT CONFIGURED
-                    </div>
-                    {"<div style='color:#e7e9ea; font-size:13px;'>📄 <b>Ref doc:</b> " + proj_data["context_filename"] + "</div>" if proj_data.get("context_filename") else ""}
-                    {"<div style='color:#8899a6; font-size:12px; margin-top:4px;'>" + " · ".join(filter(None,[proj_data.get("industry",""), proj_data.get("project_type",""), proj_data.get("project_stage","")])) + "</div>" if any([proj_data.get("industry"), proj_data.get("project_type"), proj_data.get("project_stage")]) else ""}
-                </div>''',
+                f"""<div style="background:rgba(30,58,95,0.4);border:1px solid rgba(201,168,76,0.4);
+                    border-left:3px solid #C9A84C;border-radius:8px;padding:10px 16px;margin-bottom:16px;">
+                    <div style="color:#C9A84C;font-size:11px;letter-spacing:1px;margin-bottom:6px;">✅ CONTEXT CONFIGURED</div>
+                    {_ref_line}{_meta_line}
+                </div>""",
                 unsafe_allow_html=True
             )
         else:
@@ -2305,34 +2304,44 @@ def render_governance_page(supabase_client: Client) -> None:
 
         st.markdown("---")
 
-        # ── Campos de texto — siempre cargan desde Supabase ────────────────
+        # ── Campos de texto — pre-cargar desde Supabase en session_state ──
+        # Usar project_id en la key garantiza reset al cambiar de proyecto
+        _sk_ind  = f"ctx_ind_{project_id}"
+        _sk_type = f"ctx_type_{project_id}"
+        _sk_stg  = f"ctx_stg_{project_id}"
+        _sk_desc = f"ctx_desc_{project_id}"
+        if _sk_ind not in st.session_state:
+            st.session_state[_sk_ind]  = proj_data.get("industry") or ""
+        if _sk_type not in st.session_state:
+            st.session_state[_sk_type] = proj_data.get("project_type") or ""
+        if _sk_stg not in st.session_state:
+            st.session_state[_sk_stg]  = proj_data.get("project_stage") or ""
+        if _sk_desc not in st.session_state:
+            st.session_state[_sk_desc] = proj_data.get("description") or ""
+
         col1, col2 = st.columns(2)
         with col1:
             industry = st.text_input(
                 "Industry / Sector",
-                value=proj_data.get("industry") or "",
                 placeholder="Ex: Oil & Gas, Infrastructure, Mining, Defense",
-                key=f"ctx_industry_{project_id}",
+                key=_sk_ind,
             )
             project_type = st.text_input(
                 "Project Type",
-                value=proj_data.get("project_type") or "",
                 placeholder="Ex: EPC, EPCM, Design-Build, O&M",
-                key=f"ctx_project_type_{project_id}",
+                key=_sk_type,
             )
         with col2:
             project_stage = st.text_input(
                 "Current Stage",
-                value=proj_data.get("project_stage") or "",
                 placeholder="Ex: FEED, Detailed Engineering, Construction, Commissioning",
-                key=f"ctx_project_stage_{project_id}",
+                key=_sk_stg,
             )
             description = st.text_area(
                 "Project Description",
-                value=proj_data.get("description") or "",
                 placeholder="Brief description of the project objectives and scope",
                 height=80,
-                key=f"ctx_description_{project_id}",
+                key=_sk_desc,
             )
 
         if st.button("💾 Save Project Context", type="primary", key="btn_save_ctx"):
@@ -2357,10 +2366,11 @@ def render_governance_page(supabase_client: Client) -> None:
                     "context_filename": context_filename,
                 }).eq("id", project_id).execute()
                 st.session_state.ctx_expander_open = True
-                # Resetear cache para que recargue valores de Supabase
-                _ctx_cache_key = f"ctx_loaded_{project_id}"
-                if _ctx_cache_key in st.session_state:
-                    del st.session_state[_ctx_cache_key]
+                # Actualizar session_state con valores recién guardados
+                st.session_state[f"ctx_ind_{project_id}"]  = industry
+                st.session_state[f"ctx_type_{project_id}"] = project_type
+                st.session_state[f"ctx_stg_{project_id}"]  = project_stage
+                st.session_state[f"ctx_desc_{project_id}"] = description
                 # Mostrar confirmacion con los datos guardados
                 st.success(
                     f"✅ Project context saved — "
