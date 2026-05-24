@@ -1268,15 +1268,36 @@ PDF_LABELS = {
 
 
 def detect_content_language(text: str) -> str:
-    """Detecta si el texto está en español o no — heurística rápida sin API."""
-    spanish_markers = [
-        "Hallazgo", "Cambio Detectado", "Riesgo", "Decisión", "Alerta",
-        "Evidencia", "Consecuencias", "Gobernanza", "Proyecto", "el ", "la ",
-        "de ", "que ", "con ", "por ", "los ", "las ", "una ", "del "
-    ]
+    """Detecta el idioma del texto — heurística rápida sin API."""
     sample = text[:500].lower()
-    hits = sum(1 for m in spanish_markers if m.lower() in sample)
-    return "es" if hits >= 3 else "other"
+
+    spanish_markers = [
+        "hallazgo", "cambio detectado", "riesgo", "decisión", "alerta",
+        "evidencia", "consecuencias", "gobernanza", "proyecto", " el ", " la ",
+        " de ", " que ", " con ", " por ", " los ", " las ", "señal"
+    ]
+    english_markers = [
+        "finding", "change detected", "risk", "decision", "alert",
+        "evidence", "consequences", "governance", "project", " the ",
+        " of ", " and ", " for ", " with ", " this ", "signal"
+    ]
+    portuguese_markers = [
+        "achado", "mudança detectada", "risco", "decisão", "alerta",
+        "evidência", "consequências", "governança", "projeto"
+    ]
+    french_markers = [
+        "constat", "changement détecté", "risque", "décision", "alerte",
+        "preuves", "conséquences", "gouvernance", "projet"
+    ]
+
+    scores = {
+        "es": sum(1 for m in spanish_markers if m in sample),
+        "en": sum(1 for m in english_markers if m in sample),
+        "pt": sum(1 for m in portuguese_markers if m in sample),
+        "fr": sum(1 for m in french_markers if m in sample),
+    }
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= 2 else "en"  # default inglés
 
 
 def translate_single_batch(texts: list, target_lang: str) -> list:
@@ -1312,13 +1333,11 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     if not findings:
         return findings
 
-    # Detectar si ya está en el idioma correcto
+    # Detectar si el contenido ya está en el idioma target — skip si coincide
     sample = findings[0].get("content", "")
     detected = detect_content_language(sample)
-    if target_lang == "en" and detected != "es":
-        return findings
-    if target_lang == "es" and detected == "es":
-        return findings
+    if detected == target_lang:
+        return findings  # Ya está en el idioma correcto — no traducir
 
     # Separar findings con y sin traducción cacheada
     needs_translation = []
