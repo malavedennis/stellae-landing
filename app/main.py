@@ -1774,6 +1774,67 @@ def _render_project_management_panel(project_id: str, project_name: str, supabas
             st.session_state.delete_project_name = project_name
             st.rerun()
 
+    # ── CONFIRMACIONES DE DELETE (dentro del panel, siempre accesibles) ───
+    if st.session_state.get("delete_project_step1") and             st.session_state.get("delete_project_id") == project_id:
+        proj_to_delete = st.session_state.get("delete_project_name", "")
+        st.warning(
+            f"⚠️ **First confirmation:** You are about to permanently delete "
+            f"**{proj_to_delete}** and ALL its data — analyses, findings, roles "
+            f"and escalation rules. This cannot be undone."
+        )
+        col_yes1, col_no1 = st.columns([1, 1])
+        with col_yes1:
+            if st.button("Yes, I want to delete this project",
+                         key="del_proj_yes1", type="primary", use_container_width=True):
+                st.session_state.delete_project_step2 = True
+                st.rerun()
+        with col_no1:
+            if st.button("Cancel", key="del_proj_cancel1", use_container_width=True):
+                for key in ["delete_project_step1", "delete_project_step2",
+                            "delete_project_id", "delete_project_name"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+
+    if st.session_state.get("delete_project_step2") and             st.session_state.get("delete_project_id") == project_id:
+        proj_to_delete = st.session_state.get("delete_project_name", "")
+        st.error("**Second confirmation:** Type the project name exactly to confirm deletion.")
+        st.caption(f"Type exactly: **{proj_to_delete}**")
+        confirm_name = st.text_input(
+            "Type project name to confirm:",
+            placeholder=proj_to_delete,
+            key="delete_confirm_name_input"
+        )
+        delete_enabled = confirm_name.strip() == proj_to_delete.strip()
+        col_del, col_cancel = st.columns([1, 1])
+        with col_del:
+            if st.button("🗑️ DELETE PERMANENTLY", key="del_proj_final",
+                         type="primary", use_container_width=True,
+                         disabled=not delete_enabled):
+                try:
+                    supabase_client.table("projects").delete().eq(
+                        "id", project_id
+                    ).execute()
+                    for key in ["delete_project_step1", "delete_project_step2",
+                                "delete_project_id", "delete_project_name",
+                                "delete_confirm_name_input", "project_id",
+                                "project_name", "project_description"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.success("✅ Project deleted successfully.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Failed to delete project: {e}")
+        with col_cancel:
+            if st.button("Cancel", key="del_proj_cancel2", use_container_width=True):
+                for key in ["delete_project_step1", "delete_project_step2",
+                            "delete_project_id", "delete_project_name"]:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+        if not delete_enabled and confirm_name:
+            st.caption("⚠️ Project name does not match. Check spelling and try again.")
+
 
 def render_dashboard_page(supabase_client: Client) -> None:
     """Página Dashboard Ejecutivo -- semáforo, KPIs, timeline y export PDF."""
@@ -1971,74 +2032,7 @@ def render_dashboard_page(supabase_client: Client) -> None:
     st.divider()
     _render_project_management_panel(project_id, selected_name, supabase_client)
 
-    if st.session_state.get("delete_project_step1") and        st.session_state.get("delete_project_id") == project_id:
-        proj_to_delete = st.session_state.get("delete_project_name", "")
-        st.warning(
-            f"⚠️ **First confirmation:** You are about to permanently delete "
-            f"**{proj_to_delete}** and ALL its data — analyses, findings, roles "
-            f"and escalation rules. This cannot be undone."
-        )
-        col_yes1, col_no1 = st.columns([1, 1])
-        with col_yes1:
-            if st.button("Yes, I want to delete this project",
-                         key="del_proj_yes1", type="primary", use_container_width=True):
-                st.session_state.delete_project_step2 = True
-                st.rerun()
-        with col_no1:
-            if st.button("Cancel", key="del_proj_cancel1", use_container_width=True):
-                for key in ["delete_project_step1", "delete_project_step2",
-                            "delete_project_id", "delete_project_name"]:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
 
-    if st.session_state.get("delete_project_step2") and        st.session_state.get("delete_project_id") == project_id:
-        proj_to_delete = st.session_state.get("delete_project_name", "")
-        st.error("**Second confirmation:** Type the project name exactly to confirm deletion.")
-        st.caption(
-            f"In a future version this will require an administrator password. "
-            f"Type exactly: **{proj_to_delete}**"
-        )
-        confirm_name = st.text_input(
-            "Type project name to confirm:",
-            placeholder=proj_to_delete,
-            key="delete_confirm_name_input"
-        )
-        delete_enabled = confirm_name.strip() == proj_to_delete.strip()
-
-        col_del, col_cancel = st.columns([1, 1])
-        with col_del:
-            if st.button(
-                "🗑️ DELETE PERMANENTLY",
-                key="del_proj_final",
-                type="primary",
-                use_container_width=True,
-                disabled=not delete_enabled
-            ):
-                try:
-                    supabase_client.table("projects").delete().eq(
-                        "id", st.session_state.delete_project_id
-                    ).execute()
-                    for key in ["delete_project_step1", "delete_project_step2",
-                                "delete_project_id", "delete_project_name",
-                                "delete_confirm_name_input", "project_id",
-                                "project_name", "project_description"]:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.success("✅ Project deleted successfully.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Failed to delete project: {e}")
-        with col_cancel:
-            if st.button("Cancel", key="del_proj_cancel2", use_container_width=True):
-                for key in ["delete_project_step1", "delete_project_step2",
-                            "delete_project_id", "delete_project_name"]:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-
-        if not delete_enabled and confirm_name:
-            st.caption("⚠️ Project name does not match. Check spelling and try again.")
 
 
 def render_analysis_page(supabase_client: Client) -> None:
