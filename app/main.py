@@ -3061,9 +3061,18 @@ with st.sidebar:
         project_options_sidebar = {p["name"]: p["id"] for p in projects_response.data}
         project_names_sidebar = list(project_options_sidebar.keys())
 
+        # Determinar el index del proyecto activo para pre-seleccionarlo
+        _all_options = ["➕ New project..."] + project_names_sidebar
+        _active_name = st.session_state.get("project_name", "")
+        _sidebar_index = (
+            _all_options.index(_active_name)
+            if _active_name and _active_name in _all_options
+            else 0
+        )
         selected_sidebar = st.selectbox(
             "Select project",
-            options=["➕ New project..."] + project_names_sidebar,
+            options=_all_options,
+            index=_sidebar_index,
             label_visibility="collapsed",
         )
 
