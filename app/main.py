@@ -2258,7 +2258,16 @@ def render_governance_page(supabase_client: Client) -> None:
     # =========================================================================
     # 1. PROJECT CONTEXT — expander
     # =========================================================================
-    with st.expander("📋 Project Context", expanded=False):
+    _ctx_expanded = st.session_state.get("ctx_expander_open", False)
+    # Mostrar resumen del contexto guardado debajo del expander title
+    _ctx_label = "📋 Project Context"
+    if proj_data.get("industry") or proj_data.get("project_stage"):
+        _ctx_parts = []
+        if proj_data.get("industry"): _ctx_parts.append(proj_data["industry"])
+        if proj_data.get("project_stage"): _ctx_parts.append(proj_data["project_stage"])
+        if proj_data.get("context_filename"): _ctx_parts.append(f"Ref: {proj_data['context_filename']}")
+        _ctx_label = f"📋 Project Context — {' · '.join(_ctx_parts)}"
+    with st.expander(_ctx_label, expanded=_ctx_expanded):
         with st.form("project_context_form", clear_on_submit=False):
             col1, col2 = st.columns(2)
             with col1:
@@ -2318,6 +2327,7 @@ def render_governance_page(supabase_client: Client) -> None:
                     "context_document": context_text,
                     "context_filename": context_filename,
                 }).eq("id", project_id).execute()
+                st.session_state.ctx_expander_open = True
                 st.success("✅ Project context saved successfully.")
                 st.rerun()
             except Exception as e:
