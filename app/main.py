@@ -1336,6 +1336,9 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     # Detectar si el contenido ya está en el idioma target — skip si coincide
     sample = findings[0].get("content", "")
     detected = detect_content_language(sample)
+    # DEBUG TEMPORAL — eliminar después
+    import streamlit as _st
+    _st.caption(f"🔍 DEBUG: target={target_lang} | detected={detected} | sample='{sample[:80]}'")
     if detected == target_lang:
         return findings  # Ya está en el idioma correcto — no traducir
 
