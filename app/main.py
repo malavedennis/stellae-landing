@@ -1708,9 +1708,32 @@ def render_analysis_results_tabs() -> None:
 # PÁGINAS DE LA APP (MULTI-PAGE)
 # =============================================================================
 
+def render_project_badge(project_name: str) -> None:
+    """Muestra el badge del proyecto activo debajo del título de cada página."""
+    if not project_name:
+        return
+    st.markdown(
+        f'''<div style="
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(30,58,95,0.4);
+            border: 1px solid rgba(201,168,76,0.3);
+            border-radius: 20px;
+            padding: 3px 12px 3px 8px;
+            margin-bottom: 16px;
+        ">
+            <span style="color:#C9A84C; font-size:12px;">📁</span>
+            <span style="color:#8899a6; font-size:12px; font-weight:500;">{project_name}</span>
+        </div>''',
+        unsafe_allow_html=True
+    )
+
+
 def render_dashboard_page(supabase_client: Client) -> None:
     """Página Dashboard Ejecutivo -- semáforo, KPIs, timeline y export PDF."""
     st.title("📊 Executive Dashboard")
+    render_project_badge(st.session_state.get("project_name", ""))
     st.markdown(
         '<p class="subtitle">Real-time governance status for your project</p>',
         unsafe_allow_html=True,
@@ -1978,6 +2001,7 @@ def render_dashboard_page(supabase_client: Client) -> None:
 def render_analysis_page(supabase_client: Client) -> None:
     """Página principal: upload, análisis con Claude y tabs de resultados."""
     st.title("Stellae -- Governance Intelligence")
+    render_project_badge(st.session_state.get("project_name", ""))
     st.markdown(
         '<p class="subtitle">Upload your project documents for analysis</p>',
         unsafe_allow_html=True,
@@ -2182,6 +2206,7 @@ def render_analysis_page(supabase_client: Client) -> None:
 def render_governance_page(supabase_client: Client) -> None:
     """Página Governance: configuración completa de gobernanza por proyecto."""
     st.title("🏛️ Governance Setup")
+    render_project_badge(st.session_state.get("project_name", ""))
 
     project_id = st.session_state.get("project_id")
     selected_name = st.session_state.get("project_name", "")
@@ -2775,6 +2800,7 @@ def render_governance_page(supabase_client: Client) -> None:
 def render_audit_trail_page(supabase_client: Client) -> None:
     """Página Audit Trail: historial de análisis y edición de status."""
     st.title("📋 Audit Trail")
+    render_project_badge(st.session_state.get("project_name", ""))
     st.markdown(
         '<p class="subtitle">Review past analyses and update finding status</p>',
         unsafe_allow_html=True,
@@ -2949,6 +2975,20 @@ with st.sidebar:
             project_id = project_options_sidebar[selected_sidebar]
             project_description = ""
             st.caption(f"ID: {project_id[:8]}...")
+            # Badge proyecto activo en sidebar
+            st.markdown(
+                f'''<div style="
+                    background: linear-gradient(135deg, #1E3A5F 0%, #2d5080 100%);
+                    border-left: 3px solid #C9A84C;
+                    border-radius: 0 6px 6px 0;
+                    padding: 6px 10px;
+                    margin-top: 8px;
+                ">
+                    <div style="color:#C9A84C; font-size:9px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:2px;">Active Project</div>
+                    <div style="color:#e7e9ea; font-size:12px; font-weight:600; line-height:1.3;">{project_name}</div>
+                </div>''',
+                unsafe_allow_html=True
+            )
     else:
         st.info("No projects yet. Create your first one.")
         project_name = st.text_input("Project name", placeholder="Ex: LNG Plant Phase 2")
