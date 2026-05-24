@@ -2899,6 +2899,67 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# =============================================================================
+# AUTENTICACION — pantalla de acceso simple antes de mostrar la app
+# La contraseña se configura como variable de entorno APP_PASSWORD en Railway
+# =============================================================================
+_APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+
+if not st.session_state.get("authenticated", False):
+    # Centrar el formulario de login
+    st.markdown("""
+    <style>
+    .login-container {
+        max-width: 420px;
+        margin: 80px auto 0 auto;
+        padding: 40px;
+        background: #0f1419;
+        border: 1px solid #2d3a4f;
+        border-radius: 16px;
+        border-top: 3px solid #C9A84C;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_l, col_c, col_r = st.columns([1, 2, 1])
+    with col_c:
+        # Logo SVG inline
+        st.markdown(
+            f'''<div style="text-align:center; margin-bottom:32px;">
+                <img src="{_FAVICON_B64}"
+                    style="width:72px; height:72px; margin-bottom:16px; display:block; margin-left:auto; margin-right:auto;">
+                <div style="color:#e7e9ea; font-size:26px; font-weight:700; letter-spacing:4px; margin-bottom:4px;">STELLAE</div>
+                <div style="color:#C9A84C; font-size:12px; letter-spacing:3px; text-transform:uppercase;">Governance Intelligence</div>
+            </div>''',
+            unsafe_allow_html=True
+        )
+
+        pwd = st.text_input(
+            "Access code",
+            type="password",
+            placeholder="Enter your access code",
+            label_visibility="collapsed",
+        )
+
+        if st.button("Enter →", type="primary", use_container_width=True):
+            if _APP_PASSWORD and pwd == _APP_PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun()
+            elif not _APP_PASSWORD:
+                # Si no hay contraseña configurada en Railway, bloquear acceso
+                st.error("❌ Access not configured. Contact the administrator.")
+            else:
+                st.error("❌ Invalid access code.")
+
+        st.markdown(
+            '''<div style="text-align:center; margin-top:24px; color:#4a5568; font-size:12px;">
+                Request access at stellaeprojects.com
+            </div>''',
+            unsafe_allow_html=True
+        )
+    st.stop()
+# =============================================================================
+
 st.markdown(
     """
     <style>
