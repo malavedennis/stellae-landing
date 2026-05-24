@@ -1350,12 +1350,15 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     for i, finding in enumerate(findings):
         cached = (finding.get("content_translations") or {}).get(target_lang)
         if cached:
-            # Usar traducción cacheada — instantáneo
             result[i] = dict(finding)
             result[i]["content"] = cached
         else:
             needs_translation.append(finding.get("content", ""))
             needs_translation_idx.append(i)
+
+    # DEBUG TEMPORAL
+    import streamlit as _st2
+    _st2.caption(f"🔍 DEBUG2: needs_translation={len(needs_translation)} | cached={len(findings)-len(needs_translation)}")
 
     # Traducir solo los que no tienen cache
     if needs_translation:
