@@ -3028,9 +3028,33 @@ with st.sidebar:
         )
 
         if selected_sidebar == "➕ New project...":
-            project_name = st.text_input("Project name", placeholder="Ex: LNG Plant Phase 2")
-            project_description = st.text_area("Description (optional)", height=80)
+            project_name = st.text_input("Project name", placeholder="Ex: LNG Plant Phase 2",
+                                         key="new_project_name_input")
+            project_description = st.text_area("Description (optional)", height=80,
+                                               key="new_project_desc_input")
             project_id = None
+
+            # Botón Create Project
+            if project_name.strip():
+                if st.button("✅ Create Project", type="primary", use_container_width=True,
+                             key="btn_create_project"):
+                    try:
+                        new_pid = get_or_create_project(
+                            supabase,
+                            project_name.strip(),
+                            project_description.strip()
+                        )
+                        st.session_state.project_name = project_name.strip()
+                        st.session_state.project_description = project_description.strip()
+                        st.session_state.project_id = new_pid
+                        st.success(f"✅ Project '{project_name.strip()}' created!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Could not create project: {e}")
+            else:
+                st.button("✅ Create Project", type="primary", use_container_width=True,
+                          disabled=True, key="btn_create_project_disabled",
+                          help="Enter a project name first")
         else:
             project_name = selected_sidebar
             project_id = project_options_sidebar[selected_sidebar]
@@ -3052,9 +3076,32 @@ with st.sidebar:
             )
     else:
         st.info("No projects yet. Create your first one.")
-        project_name = st.text_input("Project name", placeholder="Ex: LNG Plant Phase 2")
-        project_description = st.text_area("Description (optional)", height=80)
+        project_name = st.text_input("Project name", placeholder="Ex: LNG Plant Phase 2",
+                                     key="first_project_name_input")
+        project_description = st.text_area("Description (optional)", height=80,
+                                           key="first_project_desc_input")
         project_id = None
+
+        if project_name.strip():
+            if st.button("✅ Create Project", type="primary", use_container_width=True,
+                         key="btn_create_first_project"):
+                try:
+                    new_pid = get_or_create_project(
+                        supabase,
+                        project_name.strip(),
+                        project_description.strip()
+                    )
+                    st.session_state.project_name = project_name.strip()
+                    st.session_state.project_description = project_description.strip()
+                    st.session_state.project_id = new_pid
+                    st.success(f"✅ Project '{project_name.strip()}' created!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Could not create project: {e}")
+        else:
+            st.button("✅ Create Project", type="primary", use_container_width=True,
+                      disabled=True, key="btn_create_first_project_disabled",
+                      help="Enter a project name first")
 
     st.session_state.project_name = project_name or ""
     st.session_state.project_description = project_description or ""
