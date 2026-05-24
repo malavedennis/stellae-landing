@@ -410,10 +410,68 @@ def extract_all_text(uploaded_files) -> str:
 # FUNCIONES AUXILIARES — PROCESAMIENTO DE RESPUESTA XML
 # =============================================================================
 
+def normalize_alerts_formatting(text: str) -> str:
+    """Post-procesamiento: garantiza que cada ALERT/ALERTA/ALERTE empiece en nueva línea.
+    Elimina la variabilidad de formato de Claude — funciona en todos los idiomas."""
+    if not text:
+        return text
+
+    # Patrones de etiquetas de alerta en los 4 idiomas soportados
+    alert_patterns = [
+        r'(ALERT\s+\d+\s+—)',      # English: ALERT 1 —
+        r'(ALERTA\s+\d+\s+—)',     # Spanish: ALERTA 1 —
+        r'(ALERTE\s+\d+\s+—)',     # French:  ALERTE 1 —
+        r'(ALERTA\s+\d+\s+—)',     # Portuguese: same as Spanish
+        r'(ALERT\s+\d+\s+-)',       # Variante con guion simple
+        r'(ALERTA\s+\d+\s+-)',
+    ]
+
+    # También normalizar etiquetas de decisión, cambio y riesgo
+    section_patterns = [
+        r'(DECISION\s+\[?\d+\]?\s*:)',
+        r'(CHANGE\s+\[?\d+\]?\s*:)',
+        r'(RISK\s+\[?\d+\]?\s*:)',
+        r'(DECISIÓN\s+\[?\d+\]?\s*:)',
+        r'(CAMBIO\s+\[?\d+\]?\s*:)',
+        r'(RIESGO\s+\[?\d+\]?\s*:)',
+        r'(DÉCISION\s+\[?\d+\]?\s*:)',
+        r'(CHANGEMENT\s+\[?\d+\]?\s*:)',
+        r'(RISQUE\s+\[?\d+\]?\s*:)',
+        r'(DECISÃO\s+\[?\d+\]?\s*:)',
+        r'(MUDANÇA\s+\[?\d+\]?\s*:)',
+        r'(RISCO\s+\[?\d+\]?\s*:)',
+    ]
+
+    result = text
+    # Asegurar doble salto de línea antes de cada alerta
+    newline = "\n"
+    for pattern in alert_patterns:
+        result = re.sub(
+            r"(?<!" + newline + r")\s*" + pattern,
+            newline + newline + r"",
+            result,
+            flags=re.IGNORECASE
+        )
+    # Asegurar doble salto de línea antes de cada hallazgo principal
+    for pattern in section_patterns:
+        result = re.sub(
+            r"(?<!" + newline + r")\s*" + pattern,
+            newline + newline + r"",
+            result,
+            flags=re.IGNORECASE
+        )
+    # Limpiar más de 3 saltos de línea consecutivos
+    result = re.sub(r'\n{4,}', '\n\n\n', result)
+    return result.strip()
+
+
 def extract_tag(text, tag):
     pattern = f"<{tag}>(.*?)</{tag}>"
     match = re.search(pattern, text, re.DOTALL)
-    return match.group(1).strip() if match else "No se detectaron anomalías bajo los parámetros de gobernanza actuales en esta sección."
+    if not match:
+        return "No se detectaron anomalías bajo los parámetros de gobernanza actuales en esta sección."
+    # Aplicar normalización de formato antes de devolver
+    return normalize_alerts_formatting(match.group(1).strip())
 
 
 def calculate_documents_hash(uploaded_files) -> str:
@@ -3003,6 +3061,23 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # =============================================================================
 _APP_PASSWORD = os.getenv("APP_PASSWORD", "")
 
+# ── TOKEN DE SESION PERSISTENTE ──────────────────────────────────────────────
+# Usar query_params para mantener la sesion aunque Streamlit haga rerun
+# El token es un hash del password — no expone el password en la URL
+import hashlib as _hashlib
+
+def _make_session_token(password: str) -> str:
+    return _hashlib.sha256(password.encode()).hexdigest()[:16]
+
+_SESSION_TOKEN_KEY = "st"  # key corta para la URL
+
+# Verificar si hay token valido en la URL
+_url_token = st.query_params.get(_SESSION_TOKEN_KEY, "")
+_valid_token = _make_session_token(_APP_PASSWORD) if _APP_PASSWORD else ""
+
+if _url_token and _url_token == _valid_token:
+    st.session_state.authenticated = True
+
 if not st.session_state.get("authenticated", False):
     # Centrar el formulario de login
     st.markdown("""
@@ -3046,6 +3121,8 @@ if not st.session_state.get("authenticated", False):
         if submitted:
             if _APP_PASSWORD and pwd == _APP_PASSWORD:
                 st.session_state.authenticated = True
+                # Guardar token en URL para persistir la sesion
+                st.query_params[_SESSION_TOKEN_KEY] = _make_session_token(_APP_PASSWORD)
                 st.rerun()
             elif not _APP_PASSWORD:
                 st.error("❌ Access not configured. Contact the administrator.")
