@@ -927,6 +927,18 @@ def save_analysis_to_supabase(supabase_client: Client, project_id: str, document
     all_findings = flatten_findings(findings_by_category)
     save_findings_list(supabase_client, analysis_id, all_findings)
 
+    # Pre-cachear traducción al inglés en background si el análisis no está en inglés
+    # Esto hace que el primer Export PDF en inglés sea instantáneo
+    try:
+        current_lang = st.session_state.get("output_language", "en")
+        if current_lang != "en":
+            # Recargar findings con IDs para poder guardar el cache
+            fresh = supabase_client.table("findings").select("*").eq("analysis_id", analysis_id).execute()
+            if fresh.data:
+                translate_findings_for_pdf(fresh.data, "en")
+    except Exception:
+        pass  # No bloquear si falla el pre-cache
+
 
 def format_analysis_date(created_at: str) -> str:
     if not created_at:
