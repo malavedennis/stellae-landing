@@ -2988,16 +2988,82 @@ def render_audit_trail_page(supabase_client: Client) -> None:
         analysis_id = analysis["id"]
 
         with st.expander(f"📅 {date_label} -- {len(docs)} document(s)"):
-            # Fila superior: info + botón de eliminar
-            col_info, col_delete = st.columns([5, 1])
+            # Fila superior: info + botones export + eliminar
+            col_info, col_export, col_delete = st.columns([4, 2, 1])
             with col_info:
                 st.markdown("**Documents analyzed:**")
                 for doc_name in docs:
                     st.markdown(f"- {doc_name}")
                 st.markdown(f"**Characters processed:** {chars:,}")
+            with col_export:
+                st.markdown("&nbsp;", unsafe_allow_html=True)
+                # Selector de idioma + botón export para este análisis
+                _audit_lang_options = list(OUTPUT_LANGUAGES.keys())
+                _audit_lang_key = f"audit_lang_{analysis_id}"
+                _audit_lang_sel = st.selectbox(
+                    "Language",
+                    options=_audit_lang_options,
+                    index=_audit_lang_options.index(
+                        st.session_state.get("pdf_lang_selected", "English")
+                    ),
+                    key=_audit_lang_key,
+                    label_visibility="collapsed",
+                )
+                if st.button("📄 Export PDF", key=f"export_analysis_{analysis_id}",
+                             use_container_width=True):
+                    # Cargar findings de este análisis específico
+                    _findings_resp = supabase_client.table("findings").select("*").eq(
+                        "analysis_id", analysis_id
+                    ).execute()
+                    _analysis_findings = _findings_resp.data if _findings_resp.data else []
+
+                    if _analysis_findings:
+                        _pdf_lang = OUTPUT_LANGUAGES[_audit_lang_sel]
+                        with st.spinner(f"Generating PDF..."):
+                            try:
+                                _pdf_findings = translate_findings_for_pdf(
+                                    _analysis_findings, _pdf_lang
+                                )
+                                # Status para este análisis individual
+                                _open   = sum(1 for f in _analysis_findings if f.get("status") == "open")
+                                _review = sum(1 for f in _analysis_findings if f.get("status") == "in_review")
+                                _closed = sum(1 for f in _analysis_findings if f.get("status") == "closed")
+                                _violations = sum(1 for f in _analysis_findings if f.get("governance_violation"))
+                                if _violations > 0:
+                                    _slabel, _smsg = "CRITICAL", f"{_violations} governance violation(s) detected"
+                                elif _open > 0:
+                                    _slabel, _smsg = "AT RISK", f"{_open} open finding(s)"
+                                else:
+                                    _slabel, _smsg = "UNDER CONTROL", "No critical issues detected"
+
+                                _pdf_bytes = generate_executive_pdf(
+                                    selected_name,
+                                    _slabel, _smsg,
+                                    _pdf_findings,
+                                    [analysis],  # solo este análisis
+                                    language_code=_pdf_lang,
+                                )
+                                _fname = (
+                                    f"stellae_analysis_{date_label.replace(' ', '_').replace('/', '-')}"
+                                    f"_{selected_name.replace(' ', '_')}.pdf"
+                                )
+                                st.download_button(
+                                    label="⬇️ Download PDF",
+                                    data=_pdf_bytes,
+                                    file_name=_fname,
+                                    mime="application/pdf",
+                                    key=f"dl_analysis_{analysis_id}",
+                                    use_container_width=True,
+                                )
+                            except Exception as e:
+                                st.error(f"❌ PDF error: {e}")
+                    else:
+                        st.warning("No findings found for this analysis.")
+
             with col_delete:
                 st.markdown("&nbsp;", unsafe_allow_html=True)
-                if st.button("🗑️ Delete", key=f"del_analysis_{analysis_id}", type="secondary"):
+                if st.button("🗑️", key=f"del_analysis_{analysis_id}", type="secondary",
+                             use_container_width=True, help="Delete this analysis"):
                     st.session_state.confirm_delete_analysis = analysis_id
                     st.session_state.confirm_delete_analysis_date = date_label
                     st.rerun()
