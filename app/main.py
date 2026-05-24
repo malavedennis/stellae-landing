@@ -2268,45 +2268,51 @@ def render_governance_page(supabase_client: Client) -> None:
         if proj_data.get("context_filename"): _ctx_parts.append(f"Ref: {proj_data['context_filename']}")
         _ctx_label = f"📋 Project Context — {' · '.join(_ctx_parts)}"
     with st.expander(_ctx_label, expanded=_ctx_expanded):
-        with st.form("project_context_form", clear_on_submit=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                industry = st.text_input(
-                    "Industry / Sector",
-                    value=proj_data.get("industry") or "",
-                    placeholder="Ex: Oil & Gas, Infrastructure, Mining, Defense"
-                )
-                project_type = st.text_input(
-                    "Project Type",
-                    value=proj_data.get("project_type") or "",
-                    placeholder="Ex: EPC, EPCM, Design-Build, O&M"
-                )
-            with col2:
-                project_stage = st.text_input(
-                    "Current Stage",
-                    value=proj_data.get("project_stage") or "",
-                    placeholder="Ex: FEED, Detailed Engineering, Construction, Commissioning"
-                )
-                description = st.text_area(
-                    "Project Description",
-                    value=proj_data.get("description") or "",
-                    placeholder="Brief description of the project objectives and scope",
-                    height=80,
-                )
+        # ── File uploader FUERA del form para que no se resetee al submit ──
+        st.markdown("**Reference Document** *(optional — service design, procedures, project charter)*")
+        if proj_data.get("context_filename"):
+            st.caption(f"Current: {proj_data['context_filename']} — upload a new file to replace it.")
 
-            st.markdown("**Reference Document** *(optional — service design, procedures, project charter)*")
-            if proj_data.get("context_filename"):
-                st.caption(f"Current: {proj_data['context_filename']} — upload a new file to replace it.")
+        context_file = st.file_uploader(
+            "Upload reference document",
+            type=["pdf", "docx", "txt"],
+            key="context_doc_uploader",
+            label_visibility="collapsed",
+        )
 
-            context_file = st.file_uploader(
-                "Upload reference document",
-                type=["pdf", "docx", "txt"],
-                key="context_doc_uploader",
-                label_visibility="collapsed",
+        st.markdown("---")
+
+        # ── Campos de texto en form normal ─────────────────────────────────
+        col1, col2 = st.columns(2)
+        with col1:
+            industry = st.text_input(
+                "Industry / Sector",
+                value=proj_data.get("industry") or "",
+                placeholder="Ex: Oil & Gas, Infrastructure, Mining, Defense",
+                key="ctx_industry",
             )
-            save_context = st.form_submit_button("💾 Save Project Context", type="primary")
+            project_type = st.text_input(
+                "Project Type",
+                value=proj_data.get("project_type") or "",
+                placeholder="Ex: EPC, EPCM, Design-Build, O&M",
+                key="ctx_project_type",
+            )
+        with col2:
+            project_stage = st.text_input(
+                "Current Stage",
+                value=proj_data.get("project_stage") or "",
+                placeholder="Ex: FEED, Detailed Engineering, Construction, Commissioning",
+                key="ctx_project_stage",
+            )
+            description = st.text_area(
+                "Project Description",
+                value=proj_data.get("description") or "",
+                placeholder="Brief description of the project objectives and scope",
+                height=80,
+                key="ctx_description",
+            )
 
-        if save_context:
+        if st.button("💾 Save Project Context", type="primary", key="btn_save_ctx"):
             context_text = proj_data.get("context_document")
             context_filename = proj_data.get("context_filename")
             if context_file:
@@ -2328,8 +2334,16 @@ def render_governance_page(supabase_client: Client) -> None:
                     "context_filename": context_filename,
                 }).eq("id", project_id).execute()
                 st.session_state.ctx_expander_open = True
-                st.success("✅ Project context saved successfully.")
-                st.rerun()
+                # Mostrar confirmacion con los datos guardados
+                st.success(
+                    f"✅ Project context saved — "
+                    f"{'Industry: ' + industry + ' · ' if industry else ''}"
+                    f"{'Type: ' + project_type + ' · ' if project_type else ''}"
+                    f"{'Stage: ' + project_stage if project_stage else ''}"
+                    f"{'· Ref doc: ' + context_filename if context_filename else ''}"
+                )
+                # Recargar proj_data sin rerun para que los campos muestren valores
+                proj_data = load_project_context(supabase_client, project_id)
             except Exception as e:
                 st.error(f"❌ Failed to save context: {e}")
 
