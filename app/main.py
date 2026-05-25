@@ -2222,17 +2222,13 @@ def render_predictive_risk_panel(
     }
     _lbl = _panel_labels.get(_ui_lang, _panel_labels["en"])
 
-    # Título con ícono ℹ️ como tooltip — el caption largo desaparece
-    st.markdown(
-        f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <span style="font-size:20px;font-weight:700;color:#e7e9ea;">🔬 {_lbl['title']}</span>
-        <span title="{_lbl['tooltip']}" style="cursor:help;font-size:16px;color:#9a9690;
-        border:1px solid rgba(255,255,255,0.15);border-radius:50%;width:20px;height:20px;
-        display:inline-flex;align-items:center;justify-content:center;font-size:12px;
-        background:rgba(255,255,255,0.05);">ℹ</span>
-        </div>""",
-        unsafe_allow_html=True
-    )
+    # Título + ℹ️ con st.popover (funciona en Streamlit como click)
+    _title_col, _info_col = st.columns([8, 1])
+    with _title_col:
+        st.markdown(f"#### 🔬 {_lbl['title']}")
+    with _info_col:
+        with st.popover("ℹ️"):
+            st.caption(_lbl['tooltip'])
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -2455,6 +2451,7 @@ def render_dashboard_page(supabase_client: Client) -> None:
     status_label, status_message, status_level = calculate_project_status(all_findings)
 
     # --- Sección 1: Semáforo prominente + botón de reporte al lado ---
+    st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
     col_status, col_report = st.columns([3, 1])
     with col_status:
         st.markdown(f"## Project Status: {status_label}")
