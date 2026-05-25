@@ -245,6 +245,44 @@ Cuando detectes menciones de "FEED shortages", "FEED verification", "rely upon d
 REGLA 5 — Plan de 90 dias como hito auditable:
 Si el proyecto esta en etapa de inicio o las minutas corresponden a las primeras semanas de ejecucion EPC: verifica si el documento menciona la existencia de un plan de 90 dias (90-day frontend plan). Si no hay evidencia de este plan: registralo como decision huerfana — ausencia de planificacion frontal documentada es un predictor de problemas en etapas posteriores.
 
+DICCIONARIO DE MICRO-DISPARADORES POR INDUSTRIA:
+Cuando el contexto del proyecto indique una industria especifica, aplica los micro-disparadores adicionales correspondientes:
+
+SI la industria es OIL & GAS / UPSTREAM / DOWNSTREAM / PETROCHEMICAL / LNG:
+- HAZOP o HAZID no completado o con cambios de diseno posteriores no re-evaluados
+- SIS (Safety Instrumented System) o SIL rating modificado sin revision formal
+- Cambio en perfiles de produccion o composicion de fluidos sin actualizar la ingenieria base
+- Pipeline o flowline corridor study no concluido antes del EPC
+- Brownfield tie-ins no verificados fisicamente en campo (as-built vs. design)
+- Cambio en diametro, presion de diseno, o temperatura de operacion sin actualizar P&IDs
+
+SI la industria es MINERIA / MINING / MINERALES:
+- Estudios geotecnicos no completados o con supuestos de diseno no validados en campo
+- Cambio en angulo de talud o metodo de extraccion sin analisis de estabilidad formal
+- Environmental Assessment (EA) o permiso ambiental sin gestion activa o con plazo vencido
+- Plan de manejo de relaves (tailings) modificado sin aprobacion del ente regulatorio
+- Community agreement o consulta indigena no documentada antes de actividades de campo
+- Cambio en ley de mineral o en metodo de procesamiento sin impacto en el diseno evaluado
+- Freeze de precios de commodities como trigger de scope review — proyectos pausados sin decision formal
+
+SI la industria es INFRAESTRUCTURA / INFRASTRUCTURE / CONSTRUCCION / VIALIDAD / PUENTES:
+- Right-of-way (derecho de via) no asegurado o con oposicion legal sin resolver
+- Interferencia con servicios publicos (utilities) no notificada o no coordinada formalmente
+- Environmental Impact Statement (EIS) con cambios de diseno no incorporados
+- Aprobacion politica o regulatoria pendiente que bloquea frentes de trabajo
+- Conflictos de coordinacion entre multiples contratistas sin registro de interfaces actualizado
+- Relocalizacion de comunidades o afectaciones sociales sin plan formal documentado
+
+SI la industria es ENERGIA / POWER / TRANSMISION / RENOVABLES:
+- Modificacion de setpoints SIS sin revision de seguridad funcional (IEC 61511)
+- Cambio de equipo principal (transformador, turbina, generador) sin actualizar estudios de flujo de potencia
+- Grid connection agreement con el operador de red sin firmar o con condiciones pendientes
+- Permiso de operacion comercial (COD) con hitos tecnicos sin completar
+- Cambio en layout de planta solar o eolica sin re-evaluacion de sombras o viento
+
+SI la industria es CONSTRUCCION GENERAL / EPC / EPCM (sin industria especifica):
+Aplicar todos los micro-disparadores generales de las secciones anteriores de este prompt.
+
 REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio.
 
 Debes estructurar tu respuesta de manera estricta utilizando las siguientes etiquetas XML:
@@ -1387,12 +1425,11 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     if not findings:
         return findings
 
-    # Detectar si el contenido ya está en el idioma target — skip si coincide
+    # Si el target es inglés y el contenido está en inglés — no hacer nada
     sample = findings[0].get("content", "")
     detected = detect_content_language(sample)
-
-    if detected == target_lang:
-        return findings  # Ya está en el idioma correcto — no traducir
+    if target_lang == "en" and detected == "en":
+        return findings
 
     # Separar findings con y sin traducción cacheada
     needs_translation = []
@@ -1402,8 +1439,16 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
     for i, finding in enumerate(findings):
         translations = finding.get("content_translations") or {}
         cached = translations.get(target_lang)
-        # Verificar que el cache es válido — no None, no string vacío, no whitespace
-        if cached and isinstance(cached, str) and len(cached.strip()) > 20:
+        # Cache válido: debe existir, tener >20 chars, Y el idioma del cache
+        # debe coincidir con el target (verificar que no sea el original en inglés)
+        cache_lang = detect_content_language(cached) if cached else "unknown"
+        cache_valid = (
+            cached
+            and isinstance(cached, str)
+            and len(cached.strip()) > 20
+            and (target_lang == "en" or cache_lang == target_lang)
+        )
+        if cache_valid:
             result[i] = dict(finding)
             result[i]["content"] = cached
         else:
