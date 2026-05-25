@@ -965,42 +965,39 @@ def render_category_findings_tab(findings_list: list, category: str) -> None:
 
     for finding in findings_list:
         content = finding["content"]
+        # Limpiar caracteres problemáticos que se renderizan como cuadros corruptos
+        content = content.replace("■", "●").replace("▨", "●").replace("\u25a0", "●").replace("\u25a8", "●")
         if finding.get("governance_violation"):
             violated_rule = finding.get("violated_rule") or "Unknown rule"
-            # Traducir el nombre de la regla si el idioma UI no coincide con el idioma de la regla
+            # Traducir violated_rule al idioma UI — siempre, sin depender de detect_content_language
             _ui_lang = st.session_state.get("output_language", "en")
-            _rule_lang = detect_content_language(violated_rule)
-            if _ui_lang != _rule_lang and _ui_lang != "en":
-                try:
-                    _translated_rule = anthropic.Anthropic(
-                        api_key=os.getenv("ANTHROPIC_API_KEY")
-                    ).messages.create(
-                        model="claude-haiku-4-5-20251001",
-                        max_tokens=100,
-                        messages=[{"role": "user", "content":
-                            f"Translate this rule name to {_ui_lang}. Return ONLY the translation, nothing else: {violated_rule}"}]
-                    ).content[0].text.strip()
-                    violated_rule = _translated_rule
-                except Exception:
-                    pass  # Si falla la traducción, usar el original
-            elif _ui_lang == "en" and _rule_lang != "en":
-                try:
-                    _translated_rule = anthropic.Anthropic(
-                        api_key=os.getenv("ANTHROPIC_API_KEY")
-                    ).messages.create(
-                        model="claude-haiku-4-5-20251001",
-                        max_tokens=100,
-                        messages=[{"role": "user", "content":
-                            f"Translate this rule name to English. Return ONLY the translation, nothing else: {violated_rule}"}]
-                    ).content[0].text.strip()
-                    violated_rule = _translated_rule
-                except Exception:
-                    pass
+            _lang_names = {"en": "English", "es": "Spanish", "pt": "Portuguese", "fr": "French"}
+            _target_lang_name = _lang_names.get(_ui_lang, "English")
+            try:
+                _translated_rule = anthropic.Anthropic(
+                    api_key=os.getenv("ANTHROPIC_API_KEY")
+                ).messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=100,
+                    messages=[{"role": "user", "content":
+                        f"Translate this governance rule name to {_target_lang_name}. Return ONLY the translation, no explanation: {violated_rule}"}]
+                ).content[0].text.strip()
+                violated_rule = _translated_rule
+            except Exception:
+                pass  # usar original si falla
+            # Header GOVERNANCE VIOLATION traducido por idioma
+            _viol_headers = {
+                "en": "GOVERNANCE VIOLATION — Escalation required",
+                "es": "VIOLACIÓN DE GOBERNANZA — Escalación requerida",
+                "pt": "VIOLAÇÃO DE GOVERNANÇA — Escalada necessária",
+                "fr": "VIOLATION DE GOUVERNANCE — Escalade requise",
+            }
+            _viol_header = _viol_headers.get(_ui_lang, _viol_headers["en"])
             st.markdown(
                 f'''<div style="background:rgba(201,50,50,0.12);border:1px solid rgba(201,50,50,0.4);
                 border-left:4px solid #c93232;border-radius:4px;padding:10px 16px;margin-bottom:8px;">
                 <span style="color:#ff6b6b;font-weight:700;font-size:13px;">
-                GOVERNANCE VIOLATION — Escalation required</span><br>
+                {_viol_header}</span><br>
                 <span style="color:#ffaaaa;font-size:12px;">{violated_rule}</span>
                 </div>''',
                 unsafe_allow_html=True
@@ -1930,13 +1927,13 @@ def render_analysis_results_tabs() -> None:
             st.rerun()
     # ────────────────────────────────────────────────────────────
 
-    # Labels de tabs según el idioma activo
+    # Labels de tabs con iconos según el idioma activo
     _cur_lang = st.session_state.get("output_language", "en")
     _L = STRUCTURE_LABELS.get(_cur_lang, STRUCTURE_LABELS["en"])
     tab_decisiones, tab_cambios, tab_riesgos = st.tabs([
-        _L["decisions_tab"],
-        _L["changes_tab"],
-        _L["risks_tab"],
+        f"🛡️ {_L['decisions_tab']}",
+        f"🔄 {_L['changes_tab']}",
+        f"⚠️ {_L['risks_tab']}",
     ])
 
     with tab_decisiones:
