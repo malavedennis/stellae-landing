@@ -1488,38 +1488,39 @@ def translate_single_batch(texts: list, target_lang: str) -> list:
 
 
 def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
-    """Traduce findings al idioma del PDF. Usa cache en Supabase para evitar re-traducir."""
+    """Traduce findings al idioma del PDF. Evalua cada finding individualmente."""
     if not findings:
         return findings
 
-    # Si el target es inglés y el contenido está en inglés — no hacer nada
-    sample = findings[0].get("content", "")
-    detected = detect_content_language(sample)
-    if target_lang == "en" and detected == "en":
-        return findings
-
-    # Separar findings con y sin traducción cacheada
+    # Separar findings con y sin traducción — evaluar CADA finding por separado
     needs_translation = []
     needs_translation_idx = []
     result = list(findings)  # copia para modificar
 
     for i, finding in enumerate(findings):
+        content = finding.get("content", "")
+        content_lang = detect_content_language(content)
+
+        # Si el contenido ya está en el idioma target — no necesita traducción
+        if content_lang == target_lang:
+            continue
+
+        # Verificar cache válido para este finding específico
         translations = finding.get("content_translations") or {}
         cached = translations.get(target_lang)
-        # Cache válido: debe existir, tener >20 chars, Y el idioma del cache
-        # debe coincidir con el target (verificar que no sea el original en inglés)
         cache_lang = detect_content_language(cached) if cached else "unknown"
         cache_valid = (
             cached
             and isinstance(cached, str)
             and len(cached.strip()) > 20
-            and (target_lang == "en" or cache_lang == target_lang)
+            and cache_lang == target_lang
         )
+
         if cache_valid:
             result[i] = dict(finding)
             result[i]["content"] = cached
         else:
-            needs_translation.append(finding.get("content", ""))
+            needs_translation.append(content)
             needs_translation_idx.append(i)
 
     # Traducir solo los que no tienen cache
