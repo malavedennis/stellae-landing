@@ -2544,11 +2544,12 @@ def render_governance_page(supabase_client: Client) -> None:
                     "context_filename": context_filename,
                 }).eq("id", project_id).execute()
                 st.session_state.ctx_expander_open = True
-                # Actualizar session_state con valores recién guardados
-                st.session_state[f"ctx_ind_{project_id}"]  = industry
-                st.session_state[f"ctx_type_{project_id}"] = project_type
-                st.session_state[f"ctx_stg_{project_id}"]  = project_stage
-                st.session_state[f"ctx_desc_{project_id}"] = description
+                # Limpiar cache de session_state para que recargue desde Supabase al rerun
+                # NO modificar directamente — causa error "cannot be modified after widget instantiated"
+                for _k in [f"ctx_ind_{project_id}", f"ctx_type_{project_id}",
+                           f"ctx_stg_{project_id}", f"ctx_desc_{project_id}"]:
+                    if _k in st.session_state:
+                        del st.session_state[_k]
                 # Mostrar confirmacion con los datos guardados
                 st.success(
                     f"✅ Project context saved — "
