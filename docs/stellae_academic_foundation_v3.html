@@ -146,10 +146,10 @@
   /* LOGIC CHAIN */
   .logic-chain {
     display: grid;
-    grid-template-columns: 1fr 32px 1fr 32px 1fr 32px 1fr;
     gap: 0;
     margin-bottom: 80px;
-    align-items: center;
+    align-items: start;
+    overflow: visible;
   }
 
   .logic-node {
@@ -179,9 +179,14 @@
   }
 
   .logic-node .node-text {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--white);
-    line-height: 1.6;
+    line-height: 1.5;
+  }
+
+  .logic-node {
+    min-width: 0;
+    overflow: hidden;
   }
 
   .logic-arrow {
@@ -411,7 +416,7 @@
       <div class="stat-label">of IM performance variance explained by formal governance</div>
     </div>
   </div>
-  <div class="stats-row" style="grid-template-columns: 1fr 1fr 2fr; margin-top: 2px;">
+  <div class="stats-row" style="margin-top: 2px;">
     <div class="stat-block">
       <div class="stat-number">57%</div>
       <div class="stat-label">of construction projects over budget — McKinsey 2016</div>
@@ -426,13 +431,13 @@
     </div>
     <div class="stat-block">
       <div class="stat-number">2nd</div>
-      <div class="stat-label">lowest labor productivity of all global economic sectors — construction, ahead of only agriculture</div>
+      <div class="stat-label">lowest labor productivity globally — construction</div>
     </div>
   </div>
 
   <!-- CHAIN OF LOGIC — now 4 steps -->
-  <div class="section-eyebrow">The Argument in Four Steps</div>
-  <div class="logic-chain">
+  <div class="section-eyebrow">The Argument in Five Steps</div>
+  <div class="logic-chain" style="grid-template-columns: 1fr 20px 1fr 20px 1fr 20px 1fr 20px 1fr;">
     <div class="logic-node">
       <div class="node-label">Problem — Flyvbjerg 2007</div>
       <div class="node-text">9 of 10 megaprojects fail on cost and schedule. The cause is not technical error — it is deliberate misrepresentation and lack of accountability structures.</div>
@@ -453,9 +458,9 @@
       <div class="node-text">Real-time governance enforcement. Every decision audited. Every violation flagged. Accountability automatic.</div>
     </div>
     <div class="logic-arrow">→</div>
-    <div class="logic-node" style="border-left: 3px solid var(--gold); background: rgba(201,168,76,0.08);">
+    <div class="logic-node" style="border-left: 3px solid var(--gold) !important; background: rgba(201,168,76,0.08) !important; min-width: 0;">
       <div class="node-label" style="color: var(--gold-light);">Predictive Engine — Stellae 2026</div>
-      <div class="node-text">β=0.88 as Bayesian prior. Violations propagated through academic equations. Financial risk quantified from day one. Zero training data required.</div>
+      <div class="node-text">β=0.88 as Bayesian prior. Violations propagated through academic equations. Financial risk quantified. Zero training data required.</div>
     </div>
   </div>
 
