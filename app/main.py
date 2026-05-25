@@ -965,42 +965,39 @@ def render_category_findings_tab(findings_list: list, category: str) -> None:
 
     for finding in findings_list:
         content = finding["content"]
+        # Limpiar caracteres que se renderizan como cuadros corruptos
+        content = content.replace("■", "●").replace("▨", "●").replace("\u25a0", "●").replace("\u25a8", "●")
         if finding.get("governance_violation"):
             violated_rule = finding.get("violated_rule") or "Unknown rule"
-            # Traducir el nombre de la regla si el idioma UI no coincide con el idioma de la regla
+            # Traducir violated_rule al idioma UI — siempre, sin depender de detect_content_language
             _ui_lang = st.session_state.get("output_language", "en")
-            _rule_lang = detect_content_language(violated_rule)
-            if _ui_lang != _rule_lang and _ui_lang != "en":
-                try:
-                    _translated_rule = anthropic.Anthropic(
-                        api_key=os.getenv("ANTHROPIC_API_KEY")
-                    ).messages.create(
-                        model="claude-haiku-4-5-20251001",
-                        max_tokens=100,
-                        messages=[{"role": "user", "content":
-                            f"Translate this rule name to {_ui_lang}. Return ONLY the translation, nothing else: {violated_rule}"}]
-                    ).content[0].text.strip()
-                    violated_rule = _translated_rule
-                except Exception:
-                    pass  # Si falla la traducción, usar el original
-            elif _ui_lang == "en" and _rule_lang != "en":
-                try:
-                    _translated_rule = anthropic.Anthropic(
-                        api_key=os.getenv("ANTHROPIC_API_KEY")
-                    ).messages.create(
-                        model="claude-haiku-4-5-20251001",
-                        max_tokens=100,
-                        messages=[{"role": "user", "content":
-                            f"Translate this rule name to English. Return ONLY the translation, nothing else: {violated_rule}"}]
-                    ).content[0].text.strip()
-                    violated_rule = _translated_rule
-                except Exception:
-                    pass
+            _lang_names = {"en": "English", "es": "Spanish", "pt": "Portuguese", "fr": "French"}
+            _target_lang_name = _lang_names.get(_ui_lang, "English")
+            try:
+                _translated_rule = anthropic.Anthropic(
+                    api_key=os.getenv("ANTHROPIC_API_KEY")
+                ).messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=100,
+                    messages=[{"role": "user", "content":
+                        f"Translate this governance rule name to {_target_lang_name}. Return ONLY the translation, no explanation: {violated_rule}"}]
+                ).content[0].text.strip()
+                violated_rule = _translated_rule
+            except Exception:
+                pass  # usar original si falla
+            # Header GOVERNANCE VIOLATION traducido por idioma
+            _viol_headers = {
+                "en": "GOVERNANCE VIOLATION — Escalation required",
+                "es": "VIOLACIÓN DE GOBERNANZA — Escalación requerida",
+                "pt": "VIOLAÇÃO DE GOVERNANÇA — Escalada necessária",
+                "fr": "VIOLATION DE GOUVERNANCE — Escalade requise",
+            }
+            _viol_header = _viol_headers.get(_ui_lang, _viol_headers["en"])
             st.markdown(
                 f'''<div style="background:rgba(201,50,50,0.12);border:1px solid rgba(201,50,50,0.4);
                 border-left:4px solid #c93232;border-radius:4px;padding:10px 16px;margin-bottom:8px;">
                 <span style="color:#ff6b6b;font-weight:700;font-size:13px;">
-                GOVERNANCE VIOLATION — Escalation required</span><br>
+                {_viol_header}</span><br>
                 <span style="color:#ffaaaa;font-size:12px;">{violated_rule}</span>
                 </div>''',
                 unsafe_allow_html=True
@@ -1853,7 +1850,14 @@ def translate_analysis_results(target_language_code: str) -> None:
 
     def translate_section(text: str) -> str:
         """Traduce una sección individual — prompt mínimo para máxima velocidad."""
-        if not text or "No se detectaron" in text or "No findings" in text:
+        if not text or len(text.strip()) < 20:
+            return text
+        # Detectar textos vacíos/sin hallazgos en cualquier idioma (no solo EN/ES)
+        _no_findings_markers = [
+            "No se detectaron", "No findings", "No anomalies",
+            "Aucune anomalie", "Nenhuma anomalia"
+        ]
+        if any(marker in text for marker in _no_findings_markers):
             return text
         client = anthropic.Anthropic()
         msg = client.messages.create(
@@ -1891,7 +1895,8 @@ def translate_analysis_results(target_language_code: str) -> None:
     project_id = st.session_state.get("project_id")
     if project_id:
         try:
-            findings_list = apply_governance_rules(project_id, findings_list, supabase)
+            _sb = st.session_state.get("supabase_client") or supabase
+            findings_list = apply_governance_rules(project_id, findings_list, _sb)
         except Exception:
             pass
     findings_by_category = rebuild_findings_by_category(findings_list)
@@ -1930,13 +1935,13 @@ def render_analysis_results_tabs() -> None:
             st.rerun()
     # ────────────────────────────────────────────────────────────
 
-    # Labels de tabs según el idioma activo
+    # Labels de tabs con iconos según el idioma activo
     _cur_lang = st.session_state.get("output_language", "en")
     _L = STRUCTURE_LABELS.get(_cur_lang, STRUCTURE_LABELS["en"])
     tab_decisiones, tab_cambios, tab_riesgos = st.tabs([
-        _L["decisions_tab"],
-        _L["changes_tab"],
-        _L["risks_tab"],
+        f"🛡️ {_L['decisions_tab']}",
+        f"🔄 {_L['changes_tab']}",
+        f"⚠️ {_L['risks_tab']}",
     ])
 
     with tab_decisiones:
@@ -2104,7 +2109,7 @@ def render_predictive_risk_panel(
     """
     Renders the Predictive Risk Panel in the Dashboard.
     Uses calculate_governance_risk() with academic priors.
-    burn_rate_usd_day defaults to $50,000/day — typical for a $480M EPC project.
+    burn_rate_usd_day leído desde Project Context; fallback $50,000/day.
     """
     if not all_findings:
         return
@@ -2147,11 +2152,86 @@ def render_predictive_risk_panel(
         burn_rate_usd_day=burn_rate_usd_day,
     )
 
-    st.markdown("---")
-    st.markdown("#### 🔬 Governance Risk Estimate")
-    st.caption(
-        f"Academic baseline — {risk['citation']} · "
-        "Decay constant provisional (Phase 2 calibration pending)"
+    # Labels traducidos por idioma activo
+    _ui_lang = st.session_state.get("output_language", "en")
+    _panel_labels = {
+        "en": {
+            "title": "Governance Risk Estimate",
+            "health": "Governance Health",
+            "interface": "Interface Risk",
+            "cost": "Cost of Inaction",
+            "overrun": "Overrun Est. Risk",
+            "disclaimer": (
+                "Directional estimates based on academic priors, not statistically certified predictions. "
+                "Accuracy improves as Stellae accumulates real project outcomes."
+            ),
+            "tooltip": (
+                "Academic baseline · Shen et al. 2021 (β=0.88, n=85 megaprojects) · "
+                "Flyvbjerg 2007 (n=258, 70yr) · SPE-203215 phase multiplier · "
+                "Decay constant: 0.12 provisional (Phase 2 calibration pending with scipy.optimize)"
+            ),
+        },
+        "es": {
+            "title": "Estimación de Riesgo de Gobernanza",
+            "health": "Salud de Gobernanza",
+            "interface": "Riesgo de Interfaz",
+            "cost": "Costo de la Inacción",
+            "overrun": "Riesgo Est. de Sobrecosto",
+            "disclaimer": (
+                "Estimaciones directivas basadas en priors académicos, no predicciones estadísticamente certificadas. "
+                "La precisión mejora conforme Stellae acumula resultados reales de proyectos."
+            ),
+            "tooltip": (
+                "Baseline académico · Shen et al. 2021 (β=0.88, n=85 megaproyectos) · "
+                "Flyvbjerg 2007 (n=258, 70 años) · Multiplicador de fase SPE-203215 · "
+                "Constante de decaimiento: 0.12 provisional (calibración Fase 2 pendiente con scipy.optimize)"
+            ),
+        },
+        "pt": {
+            "title": "Estimativa de Risco de Governança",
+            "health": "Saúde da Governança",
+            "interface": "Risco de Interface",
+            "cost": "Custo da Inação",
+            "overrun": "Risco Est. de Sobrecusto",
+            "disclaimer": (
+                "Estimativas direcionais baseadas em priors acadêmicos, não previsões certificadas estatisticamente. "
+                "A precisão melhora conforme a Stellae acumula resultados reais de projetos."
+            ),
+            "tooltip": (
+                "Baseline acadêmico · Shen et al. 2021 (β=0.88, n=85 megaprojetos) · "
+                "Flyvbjerg 2007 (n=258, 70 anos) · Multiplicador de fase SPE-203215 · "
+                "Constante de decaimento: 0.12 provisório (calibração Fase 2 pendente)"
+            ),
+        },
+        "fr": {
+            "title": "Estimation du Risque de Gouvernance",
+            "health": "Santé de Gouvernance",
+            "interface": "Risque d'Interface",
+            "cost": "Coût de l'Inaction",
+            "overrun": "Risque Est. de Dépassement",
+            "disclaimer": (
+                "Estimations directionnelles basées sur des priors académiques, non des prédictions certifiées. "
+                "La précision s'améliore au fur et à mesure que Stellae accumule des résultats réels."
+            ),
+            "tooltip": (
+                "Baseline académique · Shen et al. 2021 (β=0.88, n=85 mégaprojets) · "
+                "Flyvbjerg 2007 (n=258, 70 ans) · Multiplicateur de phase SPE-203215 · "
+                "Constante de décroissance: 0.12 provisoire (calibration Phase 2 en attente)"
+            ),
+        },
+    }
+    _lbl = _panel_labels.get(_ui_lang, _panel_labels["en"])
+
+    # Título con ícono ℹ️ como tooltip — el caption largo desaparece
+    st.markdown(
+        f"""<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:20px;font-weight:700;color:#e7e9ea;">🔬 {_lbl['title']}</span>
+        <span title="{_lbl['tooltip']}" style="cursor:help;font-size:16px;color:#9a9690;
+        border:1px solid rgba(255,255,255,0.15);border-radius:50%;width:20px;height:20px;
+        display:inline-flex;align-items:center;justify-content:center;font-size:12px;
+        background:rgba(255,255,255,0.05);">ℹ</span>
+        </div>""",
+        unsafe_allow_html=True
     )
 
     col1, col2, col3, col4 = st.columns(4)
@@ -2163,7 +2243,7 @@ def render_predictive_risk_panel(
             f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
             border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
             <div style="font-size:32px;font-weight:800;color:{color};">{health}%</div>
-            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Governance Health</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["health"]}</div>
             </div>''',
             unsafe_allow_html=True
         )
@@ -2175,7 +2255,7 @@ def render_predictive_risk_panel(
             f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
             border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
             <div style="font-size:32px;font-weight:800;color:{color2};">{irisk}%</div>
-            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Interface Risk</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["interface"]}</div>
             </div>''',
             unsafe_allow_html=True
         )
@@ -2187,7 +2267,7 @@ def render_predictive_risk_panel(
             f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
             border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
             <div style="font-size:32px;font-weight:800;color:#ff6b6b;">{cost_str}</div>
-            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Cost of Inaction</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["cost"]}</div>
             </div>''',
             unsafe_allow_html=True
         )
@@ -2199,15 +2279,14 @@ def render_predictive_risk_panel(
             f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
             border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
             <div style="font-size:32px;font-weight:800;color:{color4};">{prob}%</div>
-            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Overrun Est. Risk</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["overrun"]}</div>
             </div>''',
             unsafe_allow_html=True
         )
 
     st.caption(
-        "⚠️ These are directional estimates based on academic priors, not statistically "
-        "certified predictions. Accuracy improves as Stellae accumulates real project outcomes. "
-        f"Decay constant: 0.12 (provisional) · Phase multiplier: {risk['phase_multiplier']}x"
+        f"⚠️ {_lbl['disclaimer']} "
+        f"· Phase multiplier: {risk['phase_multiplier']}x"
     )
 
 
@@ -2356,6 +2435,21 @@ def render_dashboard_page(supabase_client: Client) -> None:
 
     # Cargar todos los findings del proyecto
     all_findings = load_all_project_findings(supabase_client, project_id)
+
+    # --- Predictive Risk Panel al tope (SEM Phase 1 — Academic Priors) ---
+    # Leer burn_rate y phase desde Project Context; fallback a valores por defecto
+    _proj_ctx = load_project_context(supabase_client, project_id)
+    _proj_phase = _proj_ctx.get("project_stage", "construction").lower().replace(" ", "_").replace("-", "_")
+    _burn_rate_raw = _proj_ctx.get("burn_rate_usd_day", None)
+    try:
+        _burn_rate = float(_burn_rate_raw) if _burn_rate_raw else 50000.0
+    except (ValueError, TypeError):
+        _burn_rate = 50000.0
+    render_predictive_risk_panel(
+        all_findings=all_findings,
+        project_phase=_proj_phase,
+        burn_rate_usd_day=_burn_rate,
+    )
 
     # Calcular semáforo
     status_label, status_message, status_level = calculate_project_status(all_findings)
@@ -2508,15 +2602,6 @@ def render_dashboard_page(supabase_client: Client) -> None:
                         st.divider()
                 else:
                     st.caption("✅ No governance violations in this analysis.")
-
-    # --- Predictive Risk Panel (SEM Phase 1 — Academic Priors) ---
-    _proj_ctx = load_project_context(supabase_client, project_id)
-    _proj_phase = _proj_ctx.get("project_stage", "construction").lower().replace(" ", "_").replace("-", "_")
-    render_predictive_risk_panel(
-        all_findings=all_findings,
-        project_phase=_proj_phase,
-        burn_rate_usd_day=50000.0,  # default $50K/day — configurable en Stage 2
-    )
 
     # --- Zona de gestión — siempre visible al final del Dashboard ---
     st.divider()
