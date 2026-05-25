@@ -343,22 +343,6 @@
   }
 
   .highlight { color: var(--gold); }
-
-  /* PDF / Print fixes */
-  @media print {
-    body { background: #0a0e14 !important; }
-    .page { padding: 40px; }
-    .paper-card { page-break-inside: avoid; }
-    .logic-chain { page-break-inside: avoid; }
-    .stats-row { page-break-inside: avoid; }
-    .closing { page-break-inside: avoid; }
-  }
-
-  /* Prevent overflow en todos los elementos */
-  .stats-row { overflow: hidden; }
-  .logic-chain { overflow: hidden; }
-  .paper-card { overflow: hidden; word-wrap: break-word; }
-  .stat-number { word-break: break-all; }
 </style>
 </head>
 <body>
@@ -391,8 +375,8 @@
     and how Stellae addresses each failure mode.
   </p>
 
-  <!-- STATS ROW — 4 + 1 layout -->
-  <div class="stats-row">
+  <!-- STATS ROW — now 5 stats -->
+  <div class="stats-row" style="grid-template-columns: repeat(5,1fr);">
     <div class="stat-block">
       <div class="stat-number">9/10</div>
       <div class="stat-label">megaprojects with cost overrun</div>
@@ -409,19 +393,9 @@
       <div class="stat-number">89%</div>
       <div class="stat-label">of IM performance variance explained by formal governance</div>
     </div>
-  </div>
-  <div class="stats-row" style="grid-template-columns: 1fr 1fr 2fr; margin-top: 2px;">
     <div class="stat-block">
       <div class="stat-number">57%</div>
       <div class="stat-label">of construction projects over budget — McKinsey 2016</div>
-    </div>
-    <div class="stat-block">
-      <div class="stat-number">77%</div>
-      <div class="stat-label">of construction projects delayed — McKinsey 2016</div>
-    </div>
-    <div class="stat-block">
-      <div class="stat-number">2nd</div>
-      <div class="stat-label">lowest labor productivity of all global economic sectors — construction, ahead of only agriculture</div>
     </div>
   </div>
 
