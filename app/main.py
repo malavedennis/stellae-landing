@@ -955,17 +955,43 @@ def render_category_findings_tab(findings_list: list, category: str) -> None:
         content = finding["content"]
         if finding.get("governance_violation"):
             violated_rule = finding.get("violated_rule") or "Unknown rule"
-            st.error("🚨 GOVERNANCE VIOLATION — Escalation required: " + violated_rule)
+            st.markdown(
+                f'''<div style="background:rgba(201,50,50,0.12);border:1px solid rgba(201,50,50,0.4);
+                border-left:4px solid #c93232;border-radius:4px;padding:10px 16px;margin-bottom:8px;">
+                <span style="color:#ff6b6b;font-weight:700;font-size:13px;">
+                GOVERNANCE VIOLATION — Escalation required</span><br>
+                <span style="color:#ffaaaa;font-size:12px;">{violated_rule}</span>
+                </div>''',
+                unsafe_allow_html=True
+            )
             st.markdown(content)
             st.divider()
         elif category == "decision":
-            st.markdown("⚠️ " + content)
+            st.markdown(
+                f'''<div style="color:#e7e9ea;border-left:3px solid #C9A84C;
+                padding-left:12px;margin-bottom:4px;">
+                <span style="color:#C9A84C;font-weight:600;font-size:12px;">DECISION</span><br>
+                {content}</div>''',
+                unsafe_allow_html=True
+            )
             st.divider()
         elif category == "change":
-            st.markdown("🔄 " + content)
+            st.markdown(
+                f'''<div style="color:#e7e9ea;border-left:3px solid #60a5fa;
+                padding-left:12px;margin-bottom:4px;">
+                <span style="color:#60a5fa;font-weight:600;font-size:12px;">CHANGE DETECTED</span><br>
+                {content}</div>''',
+                unsafe_allow_html=True
+            )
             st.divider()
         elif category == "risk":
-            st.markdown("🔴 " + content)
+            st.markdown(
+                f'''<div style="color:#e7e9ea;border-left:3px solid #f87171;
+                padding-left:12px;margin-bottom:4px;">
+                <span style="color:#f87171;font-weight:600;font-size:12px;">RISK IDENTIFIED</span><br>
+                {content}</div>''',
+                unsafe_allow_html=True
+            )
             st.divider()
 
     total = len(findings_list)
