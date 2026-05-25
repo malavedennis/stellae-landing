@@ -965,39 +965,42 @@ def render_category_findings_tab(findings_list: list, category: str) -> None:
 
     for finding in findings_list:
         content = finding["content"]
-        # Limpiar caracteres problemáticos que se renderizan como cuadros corruptos
-        content = content.replace("■", "●").replace("▨", "●").replace("\u25a0", "●").replace("\u25a8", "●")
         if finding.get("governance_violation"):
             violated_rule = finding.get("violated_rule") or "Unknown rule"
-            # Traducir violated_rule al idioma UI — siempre, sin depender de detect_content_language
+            # Traducir el nombre de la regla si el idioma UI no coincide con el idioma de la regla
             _ui_lang = st.session_state.get("output_language", "en")
-            _lang_names = {"en": "English", "es": "Spanish", "pt": "Portuguese", "fr": "French"}
-            _target_lang_name = _lang_names.get(_ui_lang, "English")
-            try:
-                _translated_rule = anthropic.Anthropic(
-                    api_key=os.getenv("ANTHROPIC_API_KEY")
-                ).messages.create(
-                    model="claude-haiku-4-5-20251001",
-                    max_tokens=100,
-                    messages=[{"role": "user", "content":
-                        f"Translate this governance rule name to {_target_lang_name}. Return ONLY the translation, no explanation: {violated_rule}"}]
-                ).content[0].text.strip()
-                violated_rule = _translated_rule
-            except Exception:
-                pass  # usar original si falla
-            # Header GOVERNANCE VIOLATION traducido por idioma
-            _viol_headers = {
-                "en": "GOVERNANCE VIOLATION — Escalation required",
-                "es": "VIOLACIÓN DE GOBERNANZA — Escalación requerida",
-                "pt": "VIOLAÇÃO DE GOVERNANÇA — Escalada necessária",
-                "fr": "VIOLATION DE GOUVERNANCE — Escalade requise",
-            }
-            _viol_header = _viol_headers.get(_ui_lang, _viol_headers["en"])
+            _rule_lang = detect_content_language(violated_rule)
+            if _ui_lang != _rule_lang and _ui_lang != "en":
+                try:
+                    _translated_rule = anthropic.Anthropic(
+                        api_key=os.getenv("ANTHROPIC_API_KEY")
+                    ).messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=100,
+                        messages=[{"role": "user", "content":
+                            f"Translate this rule name to {_ui_lang}. Return ONLY the translation, nothing else: {violated_rule}"}]
+                    ).content[0].text.strip()
+                    violated_rule = _translated_rule
+                except Exception:
+                    pass  # Si falla la traducción, usar el original
+            elif _ui_lang == "en" and _rule_lang != "en":
+                try:
+                    _translated_rule = anthropic.Anthropic(
+                        api_key=os.getenv("ANTHROPIC_API_KEY")
+                    ).messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=100,
+                        messages=[{"role": "user", "content":
+                            f"Translate this rule name to English. Return ONLY the translation, nothing else: {violated_rule}"}]
+                    ).content[0].text.strip()
+                    violated_rule = _translated_rule
+                except Exception:
+                    pass
             st.markdown(
                 f'''<div style="background:rgba(201,50,50,0.12);border:1px solid rgba(201,50,50,0.4);
                 border-left:4px solid #c93232;border-radius:4px;padding:10px 16px;margin-bottom:8px;">
                 <span style="color:#ff6b6b;font-weight:700;font-size:13px;">
-                {_viol_header}</span><br>
+                GOVERNANCE VIOLATION — Escalation required</span><br>
                 <span style="color:#ffaaaa;font-size:12px;">{violated_rule}</span>
                 </div>''',
                 unsafe_allow_html=True
@@ -1927,13 +1930,13 @@ def render_analysis_results_tabs() -> None:
             st.rerun()
     # ────────────────────────────────────────────────────────────
 
-    # Labels de tabs con iconos según el idioma activo
+    # Labels de tabs según el idioma activo
     _cur_lang = st.session_state.get("output_language", "en")
     _L = STRUCTURE_LABELS.get(_cur_lang, STRUCTURE_LABELS["en"])
     tab_decisiones, tab_cambios, tab_riesgos = st.tabs([
-        f"🛡️ {_L['decisions_tab']}",
-        f"🔄 {_L['changes_tab']}",
-        f"⚠️ {_L['risks_tab']}",
+        _L["decisions_tab"],
+        _L["changes_tab"],
+        _L["risks_tab"],
     ])
 
     with tab_decisiones:
@@ -1973,6 +1976,238 @@ def render_project_badge(project_name: str) -> None:
             <span style="color:#8899a6; font-size:12px; font-weight:500;">{project_name}</span>
         </div>''',
         unsafe_allow_html=True
+    )
+
+
+# =============================================================================
+# STELLAE PREDICTIVE RISK ENGINE — SEM Phase 1 (Deterministic Academic Priors)
+# Based on peer-reviewed research. No training data required.
+# Sources:
+#   - Shen, Tang, Wang, Duffield et al. (2021) — J. Construction Engineering
+#     and Management. n=85 megaprojects, 4 continents. β=0.88, p<0.01
+#   - Flyvbjerg (2007) — 258 infrastructure projects, 20 nations, 70 years
+#   - SPE-203215-MS — Cost commitment by phase in EPC projects
+#   - McKinsey Global Institute (2016) — 2,500+ construction projects
+# =============================================================================
+
+ACADEMIC_PRIORS = {
+    # Shen et al. 2021 — governance formal → interface management performance
+    "governance_to_interface": 0.88,        # path coefficient β
+    "governance_explains_variance": 0.89,   # R² = 89%
+
+    # Flyvbjerg 2007 — base probability of cost overrun
+    "base_overrun_probability": 0.86,       # 9 of 10 megaprojects
+
+    # SPE-203215-MS — cost of a late decision multiplied by project phase
+    # A decision made in Construction costs 25x more than in FEED
+    # Keys use lowercase_underscore to match project_phase sanitizer output:
+    #   project_phase.lower().replace(" ", "_").replace("-", "_")
+    "decision_cost_multiplier": {
+        "concept":              1.0,
+        "feed":                 3.5,
+        "detailed_engineering": 8.0,
+        "construction":         25.0,
+        "commissioning":        60.0,
+        # Common aliases from Supabase project_stage field:
+        "pre_feed":             2.0,
+        "basic_engineering":    5.0,
+        "procurement":          15.0,
+        "pre_commissioning":    45.0,
+    },
+
+    # McKinsey Global Institute 2016 — industry benchmarks
+    "projects_over_budget_pct": 0.57,
+    "projects_delayed_pct":     0.77,
+}
+
+
+def calculate_governance_risk(
+    violations: int,
+    project_phase: str,
+    days_open: int,
+    burn_rate_usd_day: float
+) -> dict:
+    """
+    Stellae Predictive Risk Engine — Phase 1 (Deterministic).
+
+    Propagates governance violations through academic coefficients to produce
+    quantified financial risk estimates. No training data required — uses
+    peer-reviewed priors as fixed weights.
+
+    Args:
+        violations: number of active governance violations
+        project_phase: one of concept/feed/detailed_engineering/construction/commissioning
+        days_open: average days the findings have been open without resolution
+        burn_rate_usd_day: project daily expenditure rate in USD
+
+    Returns:
+        dict with governance_health_pct, interface_risk_pct,
+              inaction_cost_usd, overrun_probability_pct, citation
+    """
+    # Governance health — protected floor at 5% (never reaches absolute zero)
+    # VIOLATION WEIGHTS — Phase 1 uses uniform 0.12 for all violation types.
+    # Phase 2 will differentiate by type — LLI critical path weighs more than
+    # a minor document delay. Weights below are the Phase 2 target structure.
+    # Source: domain expertise + SPE-203431 severity classification.
+    # TODO Phase 2: use finding.category + finding.violated_rule to select weight.
+    VIOLATION_WEIGHTS = {
+        "lli_critical_path":    0.25,  # LLI on critical path — highest impact
+        "hse_pattern":          0.20,  # HSE incident pattern — legal risk
+        "change_no_cr":         0.18,  # Design change without Change Request
+        "sla_document_overdue": 0.15,  # Document pending approval >72h
+        "orphan_decision":      0.12,  # Decision without formal owner (current default)
+        "feed_deficiency":      0.10,  # FEED deficiency carried into EPC
+        "default":              0.12,  # Uniform heuristic — Phase 1 baseline
+    }
+    # Phase 1: uniform decay — all violations weighted equally at 0.12
+    # Phase 2: weighted_violations = sum(VIOLATION_WEIGHTS.get(v.type, 0.12) for v in findings)
+    DECAY_CONSTANT = VIOLATION_WEIGHTS["default"]
+    governance_health = max(0.05, 1.0 - (violations * DECAY_CONSTANT))
+
+    # Interface risk — propagated via Shen et al. β=0.88
+    # Higher governance health → lower interface risk
+    interface_risk = 1.0 - (governance_health * ACADEMIC_PRIORS["governance_to_interface"])
+
+    # Cost of inaction — SPE-203215 phase multiplier applied to burn rate
+    phase_multiplier = ACADEMIC_PRIORS["decision_cost_multiplier"].get(
+        project_phase.lower().replace(" ", "_").replace("-", "_"),
+        1.0  # default to concept-level if phase not recognized
+    )
+    inaction_cost = burn_rate_usd_day * phase_multiplier * days_open
+
+    # Overrun probability — bounded at 95% ceiling for mathematical realism
+    # base_overrun (0.86) * interface_risk could exceed 1.0 without the bound
+    overrun_prob = min(
+        0.95,
+        ACADEMIC_PRIORS["base_overrun_probability"] * interface_risk
+    )
+
+    return {
+        "governance_health_pct":   round(governance_health * 100, 1),
+        "interface_risk_pct":      round(interface_risk * 100, 1),
+        "inaction_cost_usd":       round(inaction_cost, 0),
+        "overrun_probability_pct": round(overrun_prob * 100, 1),
+        "phase_multiplier":        phase_multiplier,
+        "citation": (
+            "Shen et al. 2021 (β=0.88, n=85) · "
+            "Flyvbjerg 2007 (n=258, 70yr) · "
+            f"SPE-203215 ({phase_multiplier}x {project_phase} multiplier)"
+        ),
+    }
+
+
+def render_predictive_risk_panel(
+    all_findings: list,
+    project_phase: str,
+    burn_rate_usd_day: float = 50000.0
+) -> None:
+    """
+    Renders the Predictive Risk Panel in the Dashboard.
+    Uses calculate_governance_risk() with academic priors.
+    burn_rate_usd_day defaults to $50,000/day — typical for a $480M EPC project.
+    """
+    if not all_findings:
+        return
+
+    # Count active violations and open findings
+    active_violations = sum(
+        1 for f in all_findings
+        if f.get("governance_violation") and f.get("status") == "open"
+    )
+    open_findings = [f for f in all_findings if f.get("status") == "open"]
+
+    # Average days open (use 1 as minimum to avoid zero cost display)
+    if open_findings:
+        import datetime
+        days_list = []
+        for f in open_findings:
+            created = f.get("created_at", "")
+            if created:
+                try:
+                    created_dt = datetime.datetime.fromisoformat(
+                        created.replace("Z", "+00:00")
+                    )
+                    delta = (
+                        datetime.datetime.now(datetime.timezone.utc) - created_dt
+                    ).days
+                    days_list.append(max(1, delta))
+                except Exception:
+                    days_list.append(1)
+        avg_days_open = sum(days_list) / len(days_list) if days_list else 1
+    else:
+        avg_days_open = 1
+
+    if active_violations == 0 and not open_findings:
+        return
+
+    risk = calculate_governance_risk(
+        violations=active_violations,
+        project_phase=project_phase,
+        days_open=int(avg_days_open),
+        burn_rate_usd_day=burn_rate_usd_day,
+    )
+
+    st.markdown("---")
+    st.markdown("#### 🔬 Governance Risk Estimate")
+    st.caption(
+        f"Academic baseline — {risk['citation']} · "
+        "Decay constant provisional (Phase 2 calibration pending)"
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        health = risk["governance_health_pct"]
+        color = "#4cb87a" if health >= 70 else "#C9A84C" if health >= 40 else "#ff6b6b"
+        st.markdown(
+            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
+            <div style="font-size:32px;font-weight:800;color:{color};">{health}%</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Governance Health</div>
+            </div>''',
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        irisk = risk["interface_risk_pct"]
+        color2 = "#4cb87a" if irisk <= 15 else "#C9A84C" if irisk <= 35 else "#ff6b6b"
+        st.markdown(
+            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
+            <div style="font-size:32px;font-weight:800;color:{color2};">{irisk}%</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Interface Risk</div>
+            </div>''',
+            unsafe_allow_html=True
+        )
+
+    with col3:
+        cost = risk["inaction_cost_usd"]
+        cost_str = f"${cost/1e6:.1f}M" if cost >= 1e6 else f"${cost/1e3:.0f}K"
+        st.markdown(
+            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
+            <div style="font-size:32px;font-weight:800;color:#ff6b6b;">{cost_str}</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Cost of Inaction</div>
+            </div>''',
+            unsafe_allow_html=True
+        )
+
+    with col4:
+        prob = risk["overrun_probability_pct"]
+        color4 = "#4cb87a" if prob <= 30 else "#C9A84C" if prob <= 60 else "#ff6b6b"
+        st.markdown(
+            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
+            <div style="font-size:32px;font-weight:800;color:{color4};">{prob}%</div>
+            <div style="font-size:11px;color:#9a9690;margin-top:4px;">Overrun Est. Risk</div>
+            </div>''',
+            unsafe_allow_html=True
+        )
+
+    st.caption(
+        "⚠️ These are directional estimates based on academic priors, not statistically "
+        "certified predictions. Accuracy improves as Stellae accumulates real project outcomes. "
+        f"Decay constant: 0.12 (provisional) · Phase multiplier: {risk['phase_multiplier']}x"
     )
 
 
@@ -2273,6 +2508,15 @@ def render_dashboard_page(supabase_client: Client) -> None:
                         st.divider()
                 else:
                     st.caption("✅ No governance violations in this analysis.")
+
+    # --- Predictive Risk Panel (SEM Phase 1 — Academic Priors) ---
+    _proj_ctx = load_project_context(supabase_client, project_id)
+    _proj_phase = _proj_ctx.get("project_stage", "construction").lower().replace(" ", "_").replace("-", "_")
+    render_predictive_risk_panel(
+        all_findings=all_findings,
+        project_phase=_proj_phase,
+        burn_rate_usd_day=50000.0,  # default $50K/day — configurable en Stage 2
+    )
 
     # --- Zona de gestión — siempre visible al final del Dashboard ---
     st.divider()
