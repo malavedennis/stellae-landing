@@ -825,7 +825,7 @@ Criterios para trigger_keywords:
 Proyecto: {project_name}
 
 Documento a analizar:
-{document_text[:12000]}
+{document_text[:40000]}
 
 Responde SOLO con el JSON. Sin explicaciones. Sin markdown. Sin texto antes o después."""
 
@@ -2851,7 +2851,7 @@ def render_governance_page(supabase_client: Client) -> None:
                             "project_id": project_id,
                             "rule_name": rule.get("rule_name", "Unknown"),
                             "category": rule.get("category", "change"),
-                            "trigger_keywords": rule.get("trigger_keywords", []),
+                            "trigger_keywords": [normalize_text(kw) for kw in rule.get("trigger_keywords", []) if kw],
                             "required_authority_level": rule.get("required_authority_level", 5),
                             "is_active": True,
                         }).execute()
