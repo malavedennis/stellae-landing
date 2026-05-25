@@ -2451,7 +2451,7 @@ def render_dashboard_page(supabase_client: Client) -> None:
     status_label, status_message, status_level = calculate_project_status(all_findings)
 
     # --- Sección 1: Semáforo prominente + botón de reporte al lado ---
-    st.markdown("<div style='margin-top:32px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top:72px;'></div>", unsafe_allow_html=True)
     col_status, col_report = st.columns([3, 1])
     with col_status:
         st.markdown(f"## Project Status: {status_label}")
