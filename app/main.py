@@ -114,6 +114,9 @@ STRUCTURE_LABELS = {
         "no_findings": "No anomalies detected under current governance parameters in this section.",
         "steering": "Steering Committee",
         "hours_72": "next 48-72 hours",
+        "decisions_tab": "Orphan Decisions",
+        "changes_tab": "Blind Changes",
+        "risks_tab": "Hidden Risks",
     },
     "es": {
         "role": "Actúa como un Auditor Principal de Riesgos y Gobernanza especializado en megaproyectos de infraestructura, energía y capital (con el rigor analítico necesario para evitar fallas catastróficas como las del Aeropuerto de Berlín-Brandenburgo o Crossrail). Tu objetivo es escanear los documentos provistos por el usuario (minutas, reportes, contratos, correspondencia) y extraer de forma cruda, objetiva y sin adornos corporativos únicamente tres tipos de hallazgos latentes. Es crucial que asumas un tono de escepticismo profesional: busca lo que las partes intentan omitir, suavizar o delegar de manera informal.",
@@ -138,6 +141,9 @@ STRUCTURE_LABELS = {
         "no_findings": "No se detectaron anomalías bajo los parámetros de gobernanza actuales en esta sección.",
         "steering": "Comité Directivo",
         "hours_72": "próximas 48-72 horas",
+        "decisions_tab": "Decisiones Huérfanas",
+        "changes_tab": "Cambios Ciegos",
+        "risks_tab": "Riesgos Ocultos",
     },
     "pt": {
         "role": "Aja como um Auditor Principal de Riscos e Governança especializado em megaprojetos de infraestrutura, energia e capital. Seu objetivo é escanear os documentos fornecidos pelo usuário e extrair de forma crua e objetiva apenas três tipos de achados latentes.",
@@ -162,6 +168,9 @@ STRUCTURE_LABELS = {
         "no_findings": "Nenhuma anomalia detectada sob os parâmetros de governança atuais nesta seção.",
         "steering": "Comitê Diretivo",
         "hours_72": "próximas 48-72 horas",
+        "decisions_tab": "Decisões Órfãs",
+        "changes_tab": "Mudanças Cegas",
+        "risks_tab": "Riscos Ocultos",
     },
     "fr": {
         "role": "Agissez en tant qu'Auditeur Principal des Risques et de la Gouvernance spécialisé dans les mégaprojets d'infrastructure, d'énergie et de capital. Votre objectif est de scanner les documents fournis et d'extraire uniquement trois types de constats latents.",
@@ -186,6 +195,9 @@ STRUCTURE_LABELS = {
         "no_findings": "Aucune anomalie détectée sous les paramètres de gouvernance actuels dans cette section.",
         "steering": "Comité de Pilotage",
         "hours_72": "prochaines 48-72 heures",
+        "decisions_tab": "Décisions Orphelines",
+        "changes_tab": "Changements Aveugles",
+        "risks_tab": "Risques Cachés",
     },
 }
 
@@ -955,6 +967,35 @@ def render_category_findings_tab(findings_list: list, category: str) -> None:
         content = finding["content"]
         if finding.get("governance_violation"):
             violated_rule = finding.get("violated_rule") or "Unknown rule"
+            # Traducir el nombre de la regla si el idioma UI no coincide con el idioma de la regla
+            _ui_lang = st.session_state.get("output_language", "en")
+            _rule_lang = detect_content_language(violated_rule)
+            if _ui_lang != _rule_lang and _ui_lang != "en":
+                try:
+                    _translated_rule = anthropic.Anthropic(
+                        api_key=os.getenv("ANTHROPIC_API_KEY")
+                    ).messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=100,
+                        messages=[{"role": "user", "content":
+                            f"Translate this rule name to {_ui_lang}. Return ONLY the translation, nothing else: {violated_rule}"}]
+                    ).content[0].text.strip()
+                    violated_rule = _translated_rule
+                except Exception:
+                    pass  # Si falla la traducción, usar el original
+            elif _ui_lang == "en" and _rule_lang != "en":
+                try:
+                    _translated_rule = anthropic.Anthropic(
+                        api_key=os.getenv("ANTHROPIC_API_KEY")
+                    ).messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=100,
+                        messages=[{"role": "user", "content":
+                            f"Translate this rule name to English. Return ONLY the translation, nothing else: {violated_rule}"}]
+                    ).content[0].text.strip()
+                    violated_rule = _translated_rule
+                except Exception:
+                    pass
             st.markdown(
                 f'''<div style="background:rgba(201,50,50,0.12);border:1px solid rgba(201,50,50,0.4);
                 border-left:4px solid #c93232;border-radius:4px;padding:10px 16px;margin-bottom:8px;">
@@ -1888,10 +1929,13 @@ def render_analysis_results_tabs() -> None:
             st.rerun()
     # ────────────────────────────────────────────────────────────
 
+    # Labels de tabs según el idioma activo
+    _cur_lang = st.session_state.get("output_language", "en")
+    _L = STRUCTURE_LABELS.get(_cur_lang, STRUCTURE_LABELS["en"])
     tab_decisiones, tab_cambios, tab_riesgos = st.tabs([
-        "🛡️ Decisiones Huérfanas",
-        "🔄 Cambios Ciegos",
-        "⚠️ Riesgos Ocultos",
+        _L["decisions_tab"],
+        _L["changes_tab"],
+        _L["risks_tab"],
     ])
 
     with tab_decisiones:
