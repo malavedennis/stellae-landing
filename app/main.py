@@ -1537,9 +1537,11 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
                 try:
                     existing = findings[idx].get("content_translations") or {}
                     existing[target_lang] = translated_text
-                    supabase.table("findings").update(
-                        {"content_translations": existing}
-                    ).eq("id", finding_id).execute()
+                    _sb_client = supabase if supabase else None
+                    if _sb_client:
+                        _sb_client.table("findings").update(
+                            {"content_translations": existing}
+                        ).eq("id", finding_id).execute()
                 except Exception:
                     pass  # No bloquear el PDF si falla el cache
 
@@ -1862,17 +1864,25 @@ def translate_analysis_results(target_language_code: str) -> None:
 
     lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_language_code), "English")
 
+    # Cache en memoria por sesión — evita llamadas repetidas al mismo idioma
+    if "_ui_translation_cache" not in st.session_state:
+        st.session_state["_ui_translation_cache"] = {}
+    _ui_cache = st.session_state["_ui_translation_cache"]
+
     def translate_section(text: str) -> str:
-        """Traduce una sección individual — prompt mínimo para máxima velocidad."""
+        """Traduce una sección individual — consulta cache antes de llamar API."""
         if not text or len(text.strip()) < 20:
             return text
-        # Detectar textos vacíos/sin hallazgos en cualquier idioma (no solo EN/ES)
         _no_findings_markers = [
             "No se detectaron", "No findings", "No anomalies",
             "Aucune anomalie", "Nenhuma anomalia"
         ]
         if any(marker in text for marker in _no_findings_markers):
             return text
+        # Cache lookup — si ya se tradujo en esta sesión, retornar inmediato
+        _cache_key = f"{target_language_code}:{hash(text)}"
+        if _cache_key in _ui_cache:
+            return _ui_cache[_cache_key]
         client = anthropic.Anthropic()
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",  # Haiku: 5x más rápido para traducción simple
@@ -1891,7 +1901,10 @@ def translate_analysis_results(target_language_code: str) -> None:
                 )
             }],
         )
-        return msg.content[0].text.strip()
+        _result = msg.content[0].text.strip()
+        # Guardar en cache para evitar llamada repetida
+        _ui_cache[_cache_key] = _result
+        return _result
 
     # Traducir las 3 secciones secuencialmente con Haiku (rápido)
     new_decisiones = translate_section(decisiones)
@@ -2748,12 +2761,17 @@ def render_analysis_page(supabase_client: Client) -> None:
                     char_count = len(raw_text)
 
                     if char_count > MAX_CHARS:
-                        raw_text = raw_text[:MAX_CHARS]
-                        char_count = MAX_CHARS
-                        st.warning(
-                            "⚠️ Documents truncated to 50,000 characters due to context "
-                            "limits -- consider uploading fewer files per analysis."
+                        # Chunking: dividir en partes y combinar resultados
+                        chunks = []
+                        chunk_size = MAX_CHARS
+                        for i in range(0, len(raw_text), chunk_size):
+                            chunks.append(raw_text[i:i + chunk_size])
+                        st.info(
+                            f"📄 Document is large ({char_count:,} chars). "
+                            f"Analyzing in {len(chunks)} chunks for complete coverage."
                         )
+                    else:
+                        chunks = [raw_text]
 
                     num_docs = len(uploaded_files)
                     document_names = [f.name for f in uploaded_files]
@@ -2785,8 +2803,27 @@ def render_analysis_page(supabase_client: Client) -> None:
                         if project_id_check:
                             project_ctx = load_project_context(supabase_client, project_id_check)
 
-                        with st.spinner("🔍 Stellae is scanning your documents -- this may take 20-40 seconds..."):
-                            response_text = run_anthropic_analysis(raw_text, project_context=project_ctx)
+                        if len(chunks) == 1:
+                            with st.spinner("🔍 Stellae is scanning your documents -- this may take 20-40 seconds..."):
+                                response_text = run_anthropic_analysis(chunks[0], project_context=project_ctx)
+                        else:
+                            # Multi-chunk: analizar cada parte y combinar resultados
+                            all_decisiones, all_cambios, all_riesgos = [], [], []
+                            for _ci, _chunk in enumerate(chunks):
+                                with st.spinner(f"🔍 Scanning chunk {_ci + 1} of {len(chunks)}..."):
+                                    _chunk_response = run_anthropic_analysis(_chunk, project_context=project_ctx)
+                                _d = extract_tag(_chunk_response, "decisiones_huerfanas")
+                                _c = extract_tag(_chunk_response, "cambios_ciegos")
+                                _r = extract_tag(_chunk_response, "riesgos_ocultos")
+                                if _d: all_decisiones.append(_d)
+                                if _c: all_cambios.append(_c)
+                                if _r: all_riesgos.append(_r)
+                            # Combinar en un response_text sintético
+                            response_text = (
+                                f"<decisiones_huerfanas>{'\n\n'.join(all_decisiones)}</decisiones_huerfanas>\n"
+                                f"<cambios_ciegos>{'\n\n'.join(all_cambios)}</cambios_ciegos>\n"
+                                f"<riesgos_ocultos>{'\n\n'.join(all_riesgos)}</riesgos_ocultos>"
+                            )
 
                         parse_and_store_results(response_text, num_docs, char_count)
                         st.session_state.last_analyzed_signature = current_signature
@@ -2881,7 +2918,20 @@ def render_governance_page(supabase_client: Client) -> None:
         # ── Reference Document uploader ─────────────────────────────────────
         st.markdown("**Reference Document** *(optional — service design, procedures, project charter)*")
         if proj_data.get("context_filename"):
-            st.caption(f"📄 Loaded: **{proj_data['context_filename']}** — upload a new file to replace it.")
+            _ref_col1, _ref_col2 = st.columns([5, 1])
+            with _ref_col1:
+                st.caption(f"📄 Loaded: **{proj_data['context_filename']}** — upload a new file to replace it.")
+            with _ref_col2:
+                if st.button("🗑️ Remove", key="btn_remove_ref_doc", help="Remove the current reference document"):
+                    try:
+                        supabase_client.table("projects").update({
+                            "context_document": None,
+                            "context_filename": None,
+                        }).eq("id", project_id).execute()
+                        st.success("Reference document removed.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error removing document: {e}")
 
         context_file = st.file_uploader(
             "Upload reference document",
@@ -2906,6 +2956,11 @@ def render_governance_page(supabase_client: Client) -> None:
             st.session_state[_sk_stg]  = proj_data.get("project_stage") or ""
         if _sk_desc not in st.session_state:
             st.session_state[_sk_desc] = proj_data.get("description") or ""
+
+        _sk_burn = f"ctx_burn_{project_id}"
+        if _sk_burn not in st.session_state:
+            _burn_stored = proj_data.get("burn_rate_usd_day") if proj_data else None
+            st.session_state[_sk_burn] = str(int(float(_burn_stored))) if _burn_stored else ""
 
         col1, col2 = st.columns(2)
         with col1:
@@ -2932,6 +2987,13 @@ def render_governance_page(supabase_client: Client) -> None:
                 key=_sk_desc,
             )
 
+        burn_rate_input = st.text_input(
+            "💰 Daily Burn Rate (USD/day)",
+            placeholder="Ex: 250000 — used to calculate Cost of Inaction in the Risk Panel",
+            key=_sk_burn,
+            help="Typical for a $480M EPC: $200,000–$300,000/day. Leave blank to use default $50,000/day.",
+        )
+
         if st.button("💾 Save Project Context", type="primary", key="btn_save_ctx"):
             context_text = proj_data.get("context_document")
             context_filename = proj_data.get("context_filename")
@@ -2945,19 +3007,31 @@ def render_governance_page(supabase_client: Client) -> None:
                     context_text = extract_text_from_txt(context_file)
                 context_filename = context_file.name
             try:
-                supabase_client.table("projects").update({
+                # Parsear burn_rate_usd_day — ignorar si no es número válido
+                _burn_val = None
+                try:
+                    _burn_str = burn_rate_input.strip().replace(",", "").replace("$", "") if burn_rate_input else ""
+                    if _burn_str:
+                        _burn_val = float(_burn_str)
+                except (ValueError, TypeError):
+                    pass
+                _update_data = {
                     "description": description,
                     "industry": industry,
                     "project_type": project_type,
                     "project_stage": project_stage,
                     "context_document": context_text,
                     "context_filename": context_filename,
-                }).eq("id", project_id).execute()
+                }
+                if _burn_val is not None:
+                    _update_data["burn_rate_usd_day"] = _burn_val
+                supabase_client.table("projects").update(_update_data).eq("id", project_id).execute()
                 st.session_state.ctx_expander_open = True
                 # Limpiar cache de session_state para que recargue desde Supabase al rerun
                 # NO modificar directamente — causa error "cannot be modified after widget instantiated"
                 for _k in [f"ctx_ind_{project_id}", f"ctx_type_{project_id}",
-                           f"ctx_stg_{project_id}", f"ctx_desc_{project_id}"]:
+                           f"ctx_stg_{project_id}", f"ctx_desc_{project_id}",
+                           f"ctx_burn_{project_id}"]:
                     if _k in st.session_state:
                         del st.session_state[_k]
                 # Mostrar confirmacion con los datos guardados
