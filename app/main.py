@@ -93,7 +93,7 @@ LANGUAGE_INSTRUCTIONS = {
 STRUCTURE_LABELS = {
     "en": {
         "role": "Act as a Principal Risk and Governance Auditor specialized in infrastructure, energy, and capital megaprojects (with the analytical rigor needed to prevent catastrophic failures like Berlin Brandenburg Airport or Crossrail). Your goal is to scan the documents provided by the user (minutes, reports, contracts, correspondence) and extract in a raw, objective, and corporate-jargon-free manner only three types of latent findings. Maintain a tone of professional skepticism: look for what parties are trying to omit, soften, or delegate informally.",
-        "critical_rule": "CRITICAL STRUCTURE RULE: Each finding must be a complete and indivisible unit. The same change or decision MUST NOT generate multiple separate findings. If a change has several consequences, all must be grouped under a single finding with numbered sub-alerts. This is mandatory.",
+        "critical_rule": "CRITICAL STRUCTURE RULE: Each finding must be a complete and indivisible unit. The same change or decision MUST NOT generate multiple separate findings. If a change has several consequences, all must be grouped under a single finding with numbered sub-alerts. This is mandatory. FORMAT RULE: NEVER use special Unicode box or bullet characters at the start of a title. Titles must begin directly with alphanumeric text. For sub-sections use only hyphens (-) or numbering (1., 2., 3.).",
         "orphan_label": "DECISION",
         "change_label": "CHANGE",
         "risk_label": "RISK",
@@ -120,7 +120,7 @@ STRUCTURE_LABELS = {
     },
     "es": {
         "role": "Actúa como un Auditor Principal de Riesgos y Gobernanza especializado en megaproyectos de infraestructura, energía y capital (con el rigor analítico necesario para evitar fallas catastróficas como las del Aeropuerto de Berlín-Brandenburgo o Crossrail). Tu objetivo es escanear los documentos provistos por el usuario (minutas, reportes, contratos, correspondencia) y extraer de forma cruda, objetiva y sin adornos corporativos únicamente tres tipos de hallazgos latentes. Es crucial que asumas un tono de escepticismo profesional: busca lo que las partes intentan omitir, suavizar o delegar de manera informal.",
-        "critical_rule": "REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio.",
+        "critical_rule": "REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio. REGLA DE FORMATO: NUNCA uses los caracteres especiales como cuadros o bullets Unicode al inicio de un título. Los títulos deben comenzar directamente con texto alfanumérico. Para sub-secciones usa únicamente guiones (-) o numeración (1., 2., 3.).",
         "orphan_label": "DECISIÓN",
         "change_label": "CAMBIO",
         "risk_label": "RIESGO",
@@ -296,6 +296,8 @@ SI la industria es CONSTRUCCION GENERAL / EPC / EPCM (sin industria especifica):
 Aplicar todos los micro-disparadores generales de las secciones anteriores de este prompt.
 
 REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio.
+
+REGLA DE FORMATO CRÍTICA: NUNCA uses caracteres especiales como cuadros Unicode (■ ▨ ● • ★ ◆) al inicio de un título o hallazgo. Los títulos deben comenzar directamente con texto alfanumérico (letras o números). Para sub-secciones usa únicamente guiones (-) o numeración (1., 2., 3.). Esta regla es mandatoria y no negociable.
 
 Debes estructurar tu respuesta de manera estricta utilizando las siguientes etiquetas XML:
 
