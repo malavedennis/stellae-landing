@@ -2435,7 +2435,8 @@ def render_dashboard_page(supabase_client: Client) -> None:
     # --- Predictive Risk Panel al tope (SEM Phase 1 — Academic Priors) ---
     # Leer burn_rate y phase desde Project Context; fallback a valores por defecto
     _proj_ctx = load_project_context(supabase_client, project_id)
-    _proj_phase = _proj_ctx.get("project_stage", "construction").lower().replace(" ", "_").replace("-", "_")
+    _proj_stage = _proj_ctx.get("project_stage", "construction") if _proj_ctx else "construction"
+    _proj_phase = (_proj_stage or "construction").lower().replace(" ", "_").replace("-", "_")
     _burn_rate_raw = _proj_ctx.get("burn_rate_usd_day", None)
     try:
         _burn_rate = float(_burn_rate_raw) if _burn_rate_raw else 50000.0
