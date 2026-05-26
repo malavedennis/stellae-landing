@@ -1275,6 +1275,7 @@ def calculate_project_status(all_findings: list) -> tuple:
 
 def clean_for_pdf(text: str) -> str:
     """Limpia texto para compatibilidad con fpdf2 — elimina caracteres Unicode no soportados."""
+    text = text.replace("■", "●").replace("▨", "●").replace("\u25a0", "●").replace("\u25a8", "●")
     if not text:
         return ""
     replacements = {
@@ -1684,7 +1685,20 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
             pdf.set_fill_color(255, 235, 235)
             pdf.set_draw_color(180, 30, 30)
             pdf.set_line_width(0.5)
-            rule_clean = clean_for_pdf(f.get("violated_rule", "N/A"))
+            rule_clean = f.get("violated_rule", "N/A")
+            # Traducir violated_rule al idioma del PDF
+            _pdf_lang_names = {"en": "English", "es": "Spanish", "pt": "Portuguese", "fr": "French"}
+            _pdf_target = _pdf_lang_names.get(language, "English")
+            try:
+                _client_pdf = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                rule_clean = _client_pdf.messages.create(
+                    model="claude-haiku-4-5-20251001", max_tokens=100,
+                    messages=[{"role": "user", "content":
+                        f"Translate this governance rule name to {_pdf_target}. Return ONLY the translation: {rule_clean}"}]
+                ).content[0].text.strip()
+            except Exception:
+                pass
+            rule_clean = clean_for_pdf(rule_clean)
             cat = f["category"].upper()
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_text_color(180, 30, 30)
@@ -2666,6 +2680,7 @@ def render_analysis_page(supabase_client: Client) -> None:
         with col_cancel:
             if st.button("❌ Cancel", key="btn_cancel_reanalysis", use_container_width=True):
                 del st.session_state["pending_duplicate_info"]
+                st.session_state["analysis_running"] = False
                 st.rerun()
         st.stop()
     # ───────────────────────────────────────────────────────────────────────
