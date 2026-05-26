@@ -1194,13 +1194,37 @@ def render_findings_editor(supabase_client: Client, analysis_id: str) -> None:
     if "content" in df_display.columns:
         df_display["content"] = df_display["content"].apply(clean_markdown_for_table)
 
+    # Asegurar columnas de acción si no existen
+    if "action_taken" not in df_display.columns:
+        df_display["action_taken"] = ""
+    if "responsible" not in df_display.columns:
+        df_display["responsible"] = ""
+    if "action_taken" not in df_original.columns:
+        df_original["action_taken"] = ""
+    if "responsible" not in df_original.columns:
+        df_original["responsible"] = ""
+
     edited_df = st.data_editor(
         df_display,
-        column_order=["category", "content", "status"],
+        column_order=["category", "content", "status", "responsible", "action_taken"],
         column_config={
             "category": st.column_config.TextColumn("Category", disabled=True),
-            "content": st.column_config.TextColumn("Content", disabled=True, width="large"),
-            "status": st.column_config.SelectboxColumn("Status", options=["open", "in_review", "closed"]),
+            "content": st.column_config.TextColumn("Finding", disabled=True, width="large"),
+            "status": st.column_config.SelectboxColumn(
+                "Status",
+                options=["open", "in_review", "closed"],
+                help="open → in_review → closed. Closing a finding requires Action Taken."
+            ),
+            "responsible": st.column_config.TextColumn(
+                "Responsible",
+                width="medium",
+                help="Name or role of the person responsible for resolving this finding."
+            ),
+            "action_taken": st.column_config.TextColumn(
+                "Action Taken",
+                width="large",
+                help="Document what action was taken before closing this finding."
+            ),
         },
         hide_index=True,
         key=f"findings_editor_{analysis_id}",
@@ -1211,9 +1235,34 @@ def render_findings_editor(supabase_client: Client, analysis_id: str) -> None:
         original_row = df_original[df_original["id"] == finding_id]
         if original_row.empty:
             continue
-        if row["status"] != original_row.iloc[0]["status"]:
-            supabase_client.table("findings").update({"status": row["status"]}).eq("id", finding_id).execute()
-            st.toast("✅ Status updated")
+
+        orig = original_row.iloc[0]
+        new_status = row["status"]
+        new_responsible = str(row.get("responsible", "") or "").strip()
+        new_action = str(row.get("action_taken", "") or "").strip()
+
+        # Validar: no se puede cerrar sin Acción Tomada
+        if new_status == "closed" and not new_action:
+            st.warning(
+                f"⚠️ Finding **{str(row.get('content',''))[:60]}...** "
+                "cannot be closed without documenting an Action Taken."
+            )
+            continue
+
+        # Actualizar solo si cambió algo
+        changed = (
+            new_status != orig.get("status")
+            or new_responsible != str(orig.get("responsible", "") or "")
+            or new_action != str(orig.get("action_taken", "") or "")
+        )
+        if changed:
+            _update = {
+                "status": new_status,
+                "responsible": new_responsible if new_responsible else None,
+                "action_taken": new_action if new_action else None,
+            }
+            supabase_client.table("findings").update(_update).eq("id", finding_id).execute()
+            st.toast("✅ Finding updated")
 
 
 # =============================================================================
