@@ -93,7 +93,7 @@ LANGUAGE_INSTRUCTIONS = {
 STRUCTURE_LABELS = {
     "en": {
         "role": "Act as a Principal Risk and Governance Auditor specialized in infrastructure, energy, and capital megaprojects (with the analytical rigor needed to prevent catastrophic failures like Berlin Brandenburg Airport or Crossrail). Your goal is to scan the documents provided by the user (minutes, reports, contracts, correspondence) and extract in a raw, objective, and corporate-jargon-free manner only three types of latent findings. Maintain a tone of professional skepticism: look for what parties are trying to omit, soften, or delegate informally.",
-        "critical_rule": "CRITICAL STRUCTURE RULE: Each finding must be a complete and indivisible unit. The same change or decision MUST NOT generate multiple separate findings. If a change has several consequences, all must be grouped under a single finding with numbered sub-alerts. This is mandatory. FORMAT RULE: NEVER use special Unicode box or bullet characters at the start of a title. Titles must begin directly with alphanumeric text. For sub-sections use only hyphens (-) or numbering (1., 2., 3.).",
+        "critical_rule": "CRITICAL STRUCTURE RULE: Each finding must be a complete and indivisible unit. The same change or decision MUST NOT generate multiple separate findings. If a change has several consequences, all must be grouped under a single finding with numbered sub-alerts. This is mandatory.",
         "orphan_label": "DECISION",
         "change_label": "CHANGE",
         "risk_label": "RISK",
@@ -120,7 +120,7 @@ STRUCTURE_LABELS = {
     },
     "es": {
         "role": "Actúa como un Auditor Principal de Riesgos y Gobernanza especializado en megaproyectos de infraestructura, energía y capital (con el rigor analítico necesario para evitar fallas catastróficas como las del Aeropuerto de Berlín-Brandenburgo o Crossrail). Tu objetivo es escanear los documentos provistos por el usuario (minutas, reportes, contratos, correspondencia) y extraer de forma cruda, objetiva y sin adornos corporativos únicamente tres tipos de hallazgos latentes. Es crucial que asumas un tono de escepticismo profesional: busca lo que las partes intentan omitir, suavizar o delegar de manera informal.",
-        "critical_rule": "REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio. REGLA DE FORMATO: NUNCA uses los caracteres especiales como cuadros o bullets Unicode al inicio de un título. Los títulos deben comenzar directamente con texto alfanumérico. Para sub-secciones usa únicamente guiones (-) o numeración (1., 2., 3.).",
+        "critical_rule": "REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio.",
         "orphan_label": "DECISIÓN",
         "change_label": "CAMBIO",
         "risk_label": "RIESGO",
@@ -296,8 +296,6 @@ SI la industria es CONSTRUCCION GENERAL / EPC / EPCM (sin industria especifica):
 Aplicar todos los micro-disparadores generales de las secciones anteriores de este prompt.
 
 REGLA DE ESTRUCTURA CRÍTICA: Cada hallazgo debe ser una unidad completa e indivisible. Un mismo cambio o decisión NO debe generar múltiples hallazgos separados. Si un cambio tiene varias consecuencias, todas deben estar agrupadas bajo un solo hallazgo con sub-alertas numeradas. Esto es mandatorio.
-
-REGLA DE FORMATO CRÍTICA: NUNCA uses caracteres especiales como cuadros Unicode (■ ▨ ● • ★ ◆) al inicio de un título o hallazgo. Los títulos deben comenzar directamente con texto alfanumérico (letras o números). Para sub-secciones usa únicamente guiones (-) o numeración (1., 2., 3.). Esta regla es mandatoria y no negociable.
 
 Debes estructurar tu respuesta de manera estricta utilizando las siguientes etiquetas XML:
 
@@ -1196,37 +1194,13 @@ def render_findings_editor(supabase_client: Client, analysis_id: str) -> None:
     if "content" in df_display.columns:
         df_display["content"] = df_display["content"].apply(clean_markdown_for_table)
 
-    # Asegurar columnas de acción si no existen
-    if "action_taken" not in df_display.columns:
-        df_display["action_taken"] = ""
-    if "responsible" not in df_display.columns:
-        df_display["responsible"] = ""
-    if "action_taken" not in df_original.columns:
-        df_original["action_taken"] = ""
-    if "responsible" not in df_original.columns:
-        df_original["responsible"] = ""
-
     edited_df = st.data_editor(
         df_display,
-        column_order=["category", "content", "status", "responsible", "action_taken"],
+        column_order=["category", "content", "status"],
         column_config={
             "category": st.column_config.TextColumn("Category", disabled=True),
-            "content": st.column_config.TextColumn("Finding", disabled=True, width="large"),
-            "status": st.column_config.SelectboxColumn(
-                "Status",
-                options=["open", "in_review", "closed"],
-                help="open → in_review → closed. Closing a finding requires Action Taken."
-            ),
-            "responsible": st.column_config.TextColumn(
-                "Responsible",
-                width="medium",
-                help="Name or role of the person responsible for resolving this finding."
-            ),
-            "action_taken": st.column_config.TextColumn(
-                "Action Taken",
-                width="large",
-                help="Document what action was taken before closing this finding."
-            ),
+            "content": st.column_config.TextColumn("Content", disabled=True, width="large"),
+            "status": st.column_config.SelectboxColumn("Status", options=["open", "in_review", "closed"]),
         },
         hide_index=True,
         key=f"findings_editor_{analysis_id}",
@@ -1237,34 +1211,9 @@ def render_findings_editor(supabase_client: Client, analysis_id: str) -> None:
         original_row = df_original[df_original["id"] == finding_id]
         if original_row.empty:
             continue
-
-        orig = original_row.iloc[0]
-        new_status = row["status"]
-        new_responsible = str(row.get("responsible", "") or "").strip()
-        new_action = str(row.get("action_taken", "") or "").strip()
-
-        # Validar: no se puede cerrar sin Acción Tomada
-        if new_status == "closed" and not new_action:
-            st.warning(
-                f"⚠️ Finding **{str(row.get('content',''))[:60]}...** "
-                "cannot be closed without documenting an Action Taken."
-            )
-            continue
-
-        # Actualizar solo si cambió algo
-        changed = (
-            new_status != orig.get("status")
-            or new_responsible != str(orig.get("responsible", "") or "")
-            or new_action != str(orig.get("action_taken", "") or "")
-        )
-        if changed:
-            _update = {
-                "status": new_status,
-                "responsible": new_responsible if new_responsible else None,
-                "action_taken": new_action if new_action else None,
-            }
-            supabase_client.table("findings").update(_update).eq("id", finding_id).execute()
-            st.toast("✅ Finding updated")
+        if row["status"] != original_row.iloc[0]["status"]:
+            supabase_client.table("findings").update({"status": row["status"]}).eq("id", finding_id).execute()
+            st.toast("✅ Status updated")
 
 
 # =============================================================================
@@ -1588,11 +1537,9 @@ def translate_findings_for_pdf(findings: list, target_lang: str) -> list:
                 try:
                     existing = findings[idx].get("content_translations") or {}
                     existing[target_lang] = translated_text
-                    _sb_client = supabase if supabase else None
-                    if _sb_client:
-                        _sb_client.table("findings").update(
-                            {"content_translations": existing}
-                        ).eq("id", finding_id).execute()
+                    supabase.table("findings").update(
+                        {"content_translations": existing}
+                    ).eq("id", finding_id).execute()
                 except Exception:
                     pass  # No bloquear el PDF si falla el cache
 
@@ -1915,25 +1862,17 @@ def translate_analysis_results(target_language_code: str) -> None:
 
     lang_name = next((k for k, v in OUTPUT_LANGUAGES.items() if v == target_language_code), "English")
 
-    # Cache en memoria por sesión — evita llamadas repetidas al mismo idioma
-    if "_ui_translation_cache" not in st.session_state:
-        st.session_state["_ui_translation_cache"] = {}
-    _ui_cache = st.session_state["_ui_translation_cache"]
-
     def translate_section(text: str) -> str:
-        """Traduce una sección individual — consulta cache antes de llamar API."""
+        """Traduce una sección individual — prompt mínimo para máxima velocidad."""
         if not text or len(text.strip()) < 20:
             return text
+        # Detectar textos vacíos/sin hallazgos en cualquier idioma (no solo EN/ES)
         _no_findings_markers = [
             "No se detectaron", "No findings", "No anomalies",
             "Aucune anomalie", "Nenhuma anomalia"
         ]
         if any(marker in text for marker in _no_findings_markers):
             return text
-        # Cache lookup — si ya se tradujo en esta sesión, retornar inmediato
-        _cache_key = f"{target_language_code}:{hash(text)}"
-        if _cache_key in _ui_cache:
-            return _ui_cache[_cache_key]
         client = anthropic.Anthropic()
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",  # Haiku: 5x más rápido para traducción simple
@@ -1952,10 +1891,7 @@ def translate_analysis_results(target_language_code: str) -> None:
                 )
             }],
         )
-        _result = msg.content[0].text.strip()
-        # Guardar en cache para evitar llamada repetida
-        _ui_cache[_cache_key] = _result
-        return _result
+        return msg.content[0].text.strip()
 
     # Traducir las 3 secciones secuencialmente con Haiku (rápido)
     new_decisiones = translate_section(decisiones)
@@ -2104,11 +2040,50 @@ ACADEMIC_PRIORS = {
 }
 
 
+def calculate_interference_multiplier(open_findings: list) -> float:
+    """
+    Interference Multiplier — diferencia el COI según el tipo de finding.
+    
+    COI = burn_rate × days_open × phase_multiplier × interference_multiplier
+    
+    Methodology (METHODOLOGY.md):
+    - 1.0x: decisión huérfana o riesgo sin impacto físico
+    - 1.5x: cambio sin CR — riesgo de rework potencial
+    - 2.0x: riesgo HSE o patrón sistémico — paralización potencial
+    - 2.5x: cambio confirmado con rework en campo (demolición, re-procura)
+    
+    En Stage 2 se calibrará con datos reales de cierres de proyectos.
+    """
+    if not open_findings:
+        return 1.0
+    
+    # Mapeo por categoría de finding
+    CATEGORY_MULTIPLIERS = {
+        "decision": 1.0,   # Decisión huérfana — impacto documental
+        "change":   1.5,   # Cambio ciego — riesgo de rework físico
+        "risk":     2.0,   # Riesgo oculto — paralización potencial
+    }
+    
+    # Tomar el multiplicador más alto de los findings activos
+    # (el peor escenario activo domina el COI)
+    max_multiplier = 1.0
+    for f in open_findings:
+        cat = f.get("category", "decision")
+        m = CATEGORY_MULTIPLIERS.get(cat, 1.0)
+        # Si hay violation activa, escalar 0.5x adicional
+        if f.get("governance_violation") and f.get("status") == "open":
+            m = min(2.5, m + 0.5)
+        max_multiplier = max(max_multiplier, m)
+    
+    return max_multiplier
+
+
 def calculate_governance_risk(
     violations: int,
     project_phase: str,
     days_open: int,
-    burn_rate_usd_day: float
+    burn_rate_usd_day: float,
+    open_findings: list = None,
 ) -> dict:
     """
     Stellae Predictive Risk Engine — Phase 1 (Deterministic).
@@ -2117,64 +2092,68 @@ def calculate_governance_risk(
     quantified financial risk estimates. No training data required — uses
     peer-reviewed priors as fixed weights.
 
+    COI Formula (METHODOLOGY.md):
+        COI = burn_rate × days_open × phase_multiplier × interference_multiplier
+
     Args:
         violations: number of active governance violations
         project_phase: one of concept/feed/detailed_engineering/construction/commissioning
         days_open: average days the findings have been open without resolution
         burn_rate_usd_day: project daily expenditure rate in USD
+        open_findings: list of finding dicts — used to calculate interference multiplier
 
     Returns:
         dict with governance_health_pct, interface_risk_pct,
-              inaction_cost_usd, overrun_probability_pct, citation
+              inaction_cost_usd, overrun_probability_pct, citation,
+              interference_multiplier
     """
     # Governance health — protected floor at 5% (never reaches absolute zero)
-    # VIOLATION WEIGHTS — Phase 1 uses uniform 0.12 for all violation types.
-    # Phase 2 will differentiate by type — LLI critical path weighs more than
-    # a minor document delay. Weights below are the Phase 2 target structure.
-    # Source: domain expertise + SPE-203431 severity classification.
-    # TODO Phase 2: use finding.category + finding.violated_rule to select weight.
     VIOLATION_WEIGHTS = {
-        "lli_critical_path":    0.25,  # LLI on critical path — highest impact
-        "hse_pattern":          0.20,  # HSE incident pattern — legal risk
-        "change_no_cr":         0.18,  # Design change without Change Request
-        "sla_document_overdue": 0.15,  # Document pending approval >72h
-        "orphan_decision":      0.12,  # Decision without formal owner (current default)
-        "feed_deficiency":      0.10,  # FEED deficiency carried into EPC
-        "default":              0.12,  # Uniform heuristic — Phase 1 baseline
+        "lli_critical_path":    0.25,
+        "hse_pattern":          0.20,
+        "change_no_cr":         0.18,
+        "sla_document_overdue": 0.15,
+        "orphan_decision":      0.12,
+        "feed_deficiency":      0.10,
+        "default":              0.12,
     }
-    # Phase 1: uniform decay — all violations weighted equally at 0.12
-    # Phase 2: weighted_violations = sum(VIOLATION_WEIGHTS.get(v.type, 0.12) for v in findings)
     DECAY_CONSTANT = VIOLATION_WEIGHTS["default"]
     governance_health = max(0.05, 1.0 - (violations * DECAY_CONSTANT))
 
     # Interface risk — propagated via Shen et al. β=0.88
-    # Higher governance health → lower interface risk
     interface_risk = 1.0 - (governance_health * ACADEMIC_PRIORS["governance_to_interface"])
 
-    # Cost of inaction — SPE-203215 phase multiplier applied to burn rate
+    # Phase multiplier — SPE-203215
     phase_multiplier = ACADEMIC_PRIORS["decision_cost_multiplier"].get(
         project_phase.lower().replace(" ", "_").replace("-", "_"),
-        1.0  # default to concept-level if phase not recognized
+        1.0
     )
-    inaction_cost = burn_rate_usd_day * phase_multiplier * days_open
 
-    # Overrun probability — bounded at 95% ceiling for mathematical realism
-    # base_overrun (0.86) * interface_risk could exceed 1.0 without the bound
+    # Interference multiplier — based on finding categories (METHODOLOGY.md)
+    interference_multiplier = calculate_interference_multiplier(open_findings or [])
+
+    # Cost of Inaction — fórmula completa con interference multiplier
+    # COI = burn_rate × days_open × phase_multiplier × interference_multiplier
+    inaction_cost = burn_rate_usd_day * days_open * phase_multiplier * interference_multiplier
+
+    # Overrun probability — bounded at 95% ceiling
     overrun_prob = min(
         0.95,
         ACADEMIC_PRIORS["base_overrun_probability"] * interface_risk
     )
 
     return {
-        "governance_health_pct":   round(governance_health * 100, 1),
-        "interface_risk_pct":      round(interface_risk * 100, 1),
-        "inaction_cost_usd":       round(inaction_cost, 0),
-        "overrun_probability_pct": round(overrun_prob * 100, 1),
-        "phase_multiplier":        phase_multiplier,
+        "governance_health_pct":    round(governance_health * 100, 1),
+        "interface_risk_pct":       round(interface_risk * 100, 1),
+        "inaction_cost_usd":        round(inaction_cost, 0),
+        "overrun_probability_pct":  round(overrun_prob * 100, 1),
+        "phase_multiplier":         phase_multiplier,
+        "interference_multiplier":  interference_multiplier,
         "citation": (
             "Shen et al. 2021 (β=0.88, n=85) · "
             "Flyvbjerg 2007 (n=258, 70yr) · "
-            f"SPE-203215 ({phase_multiplier}x {project_phase} multiplier)"
+            f"SPE-203215 ({phase_multiplier}x {project_phase}) · "
+            f"Interference {interference_multiplier}x"
         ),
     }
 
@@ -2228,6 +2207,7 @@ def render_predictive_risk_panel(
         project_phase=project_phase,
         days_open=int(avg_days_open),
         burn_rate_usd_day=burn_rate_usd_day,
+        open_findings=open_findings,
     )
 
     # Labels traducidos por idioma activo
@@ -2360,7 +2340,7 @@ def render_predictive_risk_panel(
 
     st.caption(
         f"⚠️ {_lbl['disclaimer']} "
-        f"· Phase multiplier: {risk['phase_multiplier']}x"
+        f"· Phase: {risk['phase_multiplier']}x · Interference: {risk['interference_multiplier']}x"
     )
 
 
@@ -2812,17 +2792,12 @@ def render_analysis_page(supabase_client: Client) -> None:
                     char_count = len(raw_text)
 
                     if char_count > MAX_CHARS:
-                        # Chunking: dividir en partes y combinar resultados
-                        chunks = []
-                        chunk_size = MAX_CHARS
-                        for i in range(0, len(raw_text), chunk_size):
-                            chunks.append(raw_text[i:i + chunk_size])
-                        st.info(
-                            f"📄 Document is large ({char_count:,} chars). "
-                            f"Analyzing in {len(chunks)} chunks for complete coverage."
+                        raw_text = raw_text[:MAX_CHARS]
+                        char_count = MAX_CHARS
+                        st.warning(
+                            "⚠️ Documents truncated to 50,000 characters due to context "
+                            "limits -- consider uploading fewer files per analysis."
                         )
-                    else:
-                        chunks = [raw_text]
 
                     num_docs = len(uploaded_files)
                     document_names = [f.name for f in uploaded_files]
@@ -2854,27 +2829,8 @@ def render_analysis_page(supabase_client: Client) -> None:
                         if project_id_check:
                             project_ctx = load_project_context(supabase_client, project_id_check)
 
-                        if len(chunks) == 1:
-                            with st.spinner("🔍 Stellae is scanning your documents -- this may take 20-40 seconds..."):
-                                response_text = run_anthropic_analysis(chunks[0], project_context=project_ctx)
-                        else:
-                            # Multi-chunk: analizar cada parte y combinar resultados
-                            all_decisiones, all_cambios, all_riesgos = [], [], []
-                            for _ci, _chunk in enumerate(chunks):
-                                with st.spinner(f"🔍 Scanning chunk {_ci + 1} of {len(chunks)}..."):
-                                    _chunk_response = run_anthropic_analysis(_chunk, project_context=project_ctx)
-                                _d = extract_tag(_chunk_response, "decisiones_huerfanas")
-                                _c = extract_tag(_chunk_response, "cambios_ciegos")
-                                _r = extract_tag(_chunk_response, "riesgos_ocultos")
-                                if _d: all_decisiones.append(_d)
-                                if _c: all_cambios.append(_c)
-                                if _r: all_riesgos.append(_r)
-                            # Combinar en un response_text sintético
-                            response_text = (
-                                f"<decisiones_huerfanas>{'\n\n'.join(all_decisiones)}</decisiones_huerfanas>\n"
-                                f"<cambios_ciegos>{'\n\n'.join(all_cambios)}</cambios_ciegos>\n"
-                                f"<riesgos_ocultos>{'\n\n'.join(all_riesgos)}</riesgos_ocultos>"
-                            )
+                        with st.spinner("🔍 Stellae is scanning your documents -- this may take 20-40 seconds..."):
+                            response_text = run_anthropic_analysis(raw_text, project_context=project_ctx)
 
                         parse_and_store_results(response_text, num_docs, char_count)
                         st.session_state.last_analyzed_signature = current_signature
@@ -2969,20 +2925,7 @@ def render_governance_page(supabase_client: Client) -> None:
         # ── Reference Document uploader ─────────────────────────────────────
         st.markdown("**Reference Document** *(optional — service design, procedures, project charter)*")
         if proj_data.get("context_filename"):
-            _ref_col1, _ref_col2 = st.columns([5, 1])
-            with _ref_col1:
-                st.caption(f"📄 Loaded: **{proj_data['context_filename']}** — upload a new file to replace it.")
-            with _ref_col2:
-                if st.button("🗑️ Remove", key="btn_remove_ref_doc", help="Remove the current reference document"):
-                    try:
-                        supabase_client.table("projects").update({
-                            "context_document": None,
-                            "context_filename": None,
-                        }).eq("id", project_id).execute()
-                        st.success("Reference document removed.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error removing document: {e}")
+            st.caption(f"📄 Loaded: **{proj_data['context_filename']}** — upload a new file to replace it.")
 
         context_file = st.file_uploader(
             "Upload reference document",
@@ -3007,11 +2950,6 @@ def render_governance_page(supabase_client: Client) -> None:
             st.session_state[_sk_stg]  = proj_data.get("project_stage") or ""
         if _sk_desc not in st.session_state:
             st.session_state[_sk_desc] = proj_data.get("description") or ""
-
-        _sk_burn = f"ctx_burn_{project_id}"
-        if _sk_burn not in st.session_state:
-            _burn_stored = proj_data.get("burn_rate_usd_day") if proj_data else None
-            st.session_state[_sk_burn] = str(int(float(_burn_stored))) if _burn_stored else ""
 
         col1, col2 = st.columns(2)
         with col1:
@@ -3038,13 +2976,6 @@ def render_governance_page(supabase_client: Client) -> None:
                 key=_sk_desc,
             )
 
-        burn_rate_input = st.text_input(
-            "💰 Daily Burn Rate (USD/day)",
-            placeholder="Ex: 250000 — used to calculate Cost of Inaction in the Risk Panel",
-            key=_sk_burn,
-            help="Typical for a $480M EPC: $200,000–$300,000/day. Leave blank to use default $50,000/day.",
-        )
-
         if st.button("💾 Save Project Context", type="primary", key="btn_save_ctx"):
             context_text = proj_data.get("context_document")
             context_filename = proj_data.get("context_filename")
@@ -3058,31 +2989,19 @@ def render_governance_page(supabase_client: Client) -> None:
                     context_text = extract_text_from_txt(context_file)
                 context_filename = context_file.name
             try:
-                # Parsear burn_rate_usd_day — ignorar si no es número válido
-                _burn_val = None
-                try:
-                    _burn_str = burn_rate_input.strip().replace(",", "").replace("$", "") if burn_rate_input else ""
-                    if _burn_str:
-                        _burn_val = float(_burn_str)
-                except (ValueError, TypeError):
-                    pass
-                _update_data = {
+                supabase_client.table("projects").update({
                     "description": description,
                     "industry": industry,
                     "project_type": project_type,
                     "project_stage": project_stage,
                     "context_document": context_text,
                     "context_filename": context_filename,
-                }
-                if _burn_val is not None:
-                    _update_data["burn_rate_usd_day"] = _burn_val
-                supabase_client.table("projects").update(_update_data).eq("id", project_id).execute()
+                }).eq("id", project_id).execute()
                 st.session_state.ctx_expander_open = True
                 # Limpiar cache de session_state para que recargue desde Supabase al rerun
                 # NO modificar directamente — causa error "cannot be modified after widget instantiated"
                 for _k in [f"ctx_ind_{project_id}", f"ctx_type_{project_id}",
-                           f"ctx_stg_{project_id}", f"ctx_desc_{project_id}",
-                           f"ctx_burn_{project_id}"]:
+                           f"ctx_stg_{project_id}", f"ctx_desc_{project_id}"]:
                     if _k in st.session_state:
                         del st.session_state[_k]
                 # Mostrar confirmacion con los datos guardados
