@@ -2039,6 +2039,130 @@ ACADEMIC_PRIORS = {
     "projects_delayed_pct":     0.77,
 }
 
+# =============================================================================
+# FLYVBJERG REFERENCE CLASS FORECASTING — P80 overrun by project class
+# Source: Flyvbjerg (2007), n=258, 70 years. P80 = 80th percentile upper bound.
+# Used by calculate_pert_coi() to set the pessimistic scenario of the PERT range.
+# Keys match industry/project_type fields from Project Context in Supabase.
+# =============================================================================
+FLYVBJERG_P80 = {
+    # Oil & Gas / Energy
+    "lng_petrochemical":    0.80,   # LNG, gas plants, refineries ~35-45% avg, P80 ~80%
+    "oil_gas":              0.80,   # General O&G upstream/downstream
+    "lng":                  0.80,
+    "petrochemical":        0.80,
+    "refinery":             0.75,
+    "offshore":             0.85,   # Offshore projects have higher variance
+    # Mining
+    "mining":               0.90,   # Mining expansion ~45% avg, P80 ~90%
+    "mining_expansion":     0.90,
+    "copper":               0.90,
+    "lithium":              0.95,
+    # Civil / Infrastructure
+    "tunnel":               1.20,   # Tunnels ~66% avg, P80 ~120%
+    "tunnel_underground":   1.20,
+    "bridge":               0.65,   # Bridges ~34% avg, P80 ~65%
+    "bridge_viaduct":       0.65,
+    "rail":                 0.85,   # Rail/metro ~45% avg
+    "metro":                0.85,
+    "rail_metro":           0.85,
+    "road":                 0.55,   # Roads ~20% avg, lower variance
+    # General
+    "infrastructure":       0.65,   # General infrastructure ~34% avg
+    "construction":         0.65,
+    "epc":                  0.75,   # Generic EPC
+    "default":              0.75,   # Conservative default if class unknown
+}
+
+
+def calculate_pert_coi(
+    burn_rate_usd_day: float,
+    days_open: int,
+    phase_multiplier: float,
+    interference_multiplier: float,
+    project_class: str = "default",
+) -> dict:
+    """
+    Beta-PERT Cost of Inaction — probabilistic range instead of a single point.
+
+    Replaces the deterministic COI with a three-point PERT estimate:
+    - Optimistic: minimum interference, no Flyvbjerg overrun
+    - Mode: current interference multiplier (same as Stage 1 deterministic)
+    - Pessimistic: Flyvbjerg P80 upper bound for the project class
+
+    PERT Mean = (Optimistic + 4×Mode + Pessimistic) / 6
+    This is the standard PMI Beta-PERT formula (MacCrimmon & Ryavec, RAND 1964).
+
+    Args:
+        burn_rate_usd_day:      Daily project burn rate in USD.
+        days_open:              Average days findings have been open.
+        phase_multiplier:       SPE-203215 phase cost multiplier.
+        interference_multiplier: Category-based interference multiplier.
+        project_class:          Project type key from FLYVBJERG_P80 table.
+                                Mapped from project_context industry/project_type fields.
+
+    Returns:
+        dict with coi_min, coi_mode, coi_max, coi_mean, coi_range_str,
+        flyvbjerg_p80_pct, project_class_used.
+
+    Stage 1 compatibility: coi_mode == calculate_governance_risk()["inaction_cost_usd"]
+    The mode is identical to the Stage 1 deterministic value — no regression.
+    """
+    base = burn_rate_usd_day * days_open * phase_multiplier
+
+    coi_optimistic  = base * 1.0                    # Best case: no interference
+    coi_mode        = base * interference_multiplier  # Current state (= Stage 1 value)
+
+    # Pessimistic: Flyvbjerg P80 applied as additional multiplier
+    # P80 of 0.80 means "80% chance overrun stays below 80% above mode"
+    p80 = FLYVBJERG_P80.get(project_class.lower().replace(" ", "_").replace("-", "_"),
+                             FLYVBJERG_P80["default"])
+    coi_pessimistic = coi_mode * (1 + p80)
+
+    # Standard PERT mean formula
+    coi_mean = (coi_optimistic + 4 * coi_mode + coi_pessimistic) / 6
+
+    def _fmt(v: float) -> str:
+        if v >= 1_000_000:
+            return f"${v/1_000_000:.1f}M"
+        elif v >= 1_000:
+            return f"${v/1_000:.0f}K"
+        return f"${v:.0f}"
+
+    return {
+        "coi_min":            round(coi_optimistic, 0),
+        "coi_mode":           round(coi_mode, 0),
+        "coi_max":            round(coi_pessimistic, 0),
+        "coi_mean":           round(coi_mean, 0),
+        "coi_range_str":      f"{_fmt(coi_optimistic)} – {_fmt(coi_pessimistic)}",
+        "coi_central_str":    _fmt(coi_mode),
+        "coi_mean_str":       _fmt(coi_mean),
+        "flyvbjerg_p80_pct":  round(p80 * 100, 0),
+        "project_class_used": project_class,
+    }
+
+
+def _map_project_class(industry: str = None, project_type: str = None) -> str:
+    """
+    Maps the industry / project_type fields from Project Context to a
+    FLYVBJERG_P80 key. Tries project_type first, then industry, then default.
+    """
+    candidates = []
+    if project_type:
+        candidates.append(project_type.lower().replace(" ", "_").replace("-", "_"))
+    if industry:
+        candidates.append(industry.lower().replace(" ", "_").replace("-", "_"))
+
+    for c in candidates:
+        if c in FLYVBJERG_P80:
+            return c
+        # Partial match — e.g. "oil & gas" → "oil_gas"
+        for key in FLYVBJERG_P80:
+            if key in c or c in key:
+                return key
+
+    return "default"
+
 
 def calculate_interference_multiplier(open_findings: list) -> float:
     """
@@ -2155,18 +2279,29 @@ def calculate_governance_risk(
             f"SPE-203215 ({phase_multiplier}x {project_phase}) · "
             f"Interference {interference_multiplier}x"
         ),
+        # Beta-PERT range — populated by render_predictive_risk_panel()
+        # after project_class is resolved from Project Context.
+        "coi_pert": None,
     }
 
 
 def render_predictive_risk_panel(
     all_findings: list,
     project_phase: str,
-    burn_rate_usd_day: float = 50000.0
+    burn_rate_usd_day: float = 50000.0,
+    project_class: str = "default",
 ) -> None:
     """
     Renders the Predictive Risk Panel in the Dashboard.
-    Uses calculate_governance_risk() with academic priors.
-    burn_rate_usd_day leído desde Project Context; fallback $50,000/day.
+    Uses calculate_governance_risk() with academic priors (Stage 1 deterministic).
+    Beta-PERT range via calculate_pert_coi() using Flyvbjerg P80 by project class.
+
+    Args:
+        all_findings:       All findings for the current project.
+        project_phase:      Current project phase (maps to SPE-203215 multiplier).
+        burn_rate_usd_day:  Daily burn rate in USD. Read from Project Context; fallback $50K.
+        project_class:      Flyvbjerg reference class key (from industry/project_type fields).
+                            Determines the P80 pessimistic scenario of the PERT COI range.
     """
     if not all_findings:
         return
@@ -2210,6 +2345,16 @@ def render_predictive_risk_panel(
         open_findings=open_findings,
     )
 
+    # Beta-PERT COI range — Flyvbjerg Reference Class Forecasting
+    pert = calculate_pert_coi(
+        burn_rate_usd_day=burn_rate_usd_day,
+        days_open=int(avg_days_open),
+        phase_multiplier=risk["phase_multiplier"],
+        interference_multiplier=risk["interference_multiplier"],
+        project_class=project_class,
+    )
+    risk["coi_pert"] = pert
+
     # Labels traducidos por idioma activo
     _ui_lang = st.session_state.get("output_language", "en")
     _panel_labels = {
@@ -2218,15 +2363,18 @@ def render_predictive_risk_panel(
             "health": "Governance Health",
             "interface": "Interface Risk",
             "cost": "Cost of Inaction",
+            "cost_range_label": "PERT Range",
+            "cost_central_label": "central",
             "overrun": "Overrun Est. Risk",
             "disclaimer": (
                 "Directional estimates based on academic priors, not statistically certified predictions. "
                 "Accuracy improves as Stellae accumulates real project outcomes."
             ),
             "tooltip": (
-                "Academic baseline · Shen et al. 2021 (β=0.88, n=85 megaprojects) · "
-                "Flyvbjerg 2007 (n=258, 70yr) · SPE-203215 phase multiplier · "
-                "Decay constant: 0.12 provisional (Phase 2 calibration pending with scipy.optimize)"
+                "Academic baseline · Shen et al. 2021 (β=0.88 propagation factor, n=85) · "
+                "Flyvbjerg 2007 Reference Class Forecasting (n=258, 70yr) · SPE-203215 phase multiplier · "
+                "Beta-PERT range uses Flyvbjerg P80 as pessimistic scenario · "
+                "Stage 1 deterministic engine — Bayesian calibration activates in Stage 2"
             ),
         },
         "es": {
@@ -2234,15 +2382,18 @@ def render_predictive_risk_panel(
             "health": "Salud de Gobernanza",
             "interface": "Riesgo de Interfaz",
             "cost": "Costo de la Inacción",
+            "cost_range_label": "Rango PERT",
+            "cost_central_label": "central",
             "overrun": "Riesgo Est. de Sobrecosto",
             "disclaimer": (
                 "Estimaciones directivas basadas en priors académicos, no predicciones estadísticamente certificadas. "
                 "La precisión mejora conforme Stellae acumula resultados reales de proyectos."
             ),
             "tooltip": (
-                "Baseline académico · Shen et al. 2021 (β=0.88, n=85 megaproyectos) · "
-                "Flyvbjerg 2007 (n=258, 70 años) · Multiplicador de fase SPE-203215 · "
-                "Constante de decaimiento: 0.12 provisional (calibración Fase 2 pendiente con scipy.optimize)"
+                "Baseline académico · Shen et al. 2021 (β=0.88 factor de propagación, n=85) · "
+                "Flyvbjerg 2007 Reference Class Forecasting (n=258, 70 años) · Multiplicador de fase SPE-203215 · "
+                "Rango Beta-PERT usa P80 de Flyvbjerg como escenario pesimista · "
+                "Motor determinista Stage 1 — calibración bayesiana se activa en Stage 2"
             ),
         },
         "pt": {
@@ -2250,15 +2401,18 @@ def render_predictive_risk_panel(
             "health": "Saúde da Governança",
             "interface": "Risco de Interface",
             "cost": "Custo da Inação",
+            "cost_range_label": "Faixa PERT",
+            "cost_central_label": "central",
             "overrun": "Risco Est. de Sobrecusto",
             "disclaimer": (
                 "Estimativas direcionais baseadas em priors acadêmicos, não previsões certificadas estatisticamente. "
                 "A precisão melhora conforme a Stellae acumula resultados reais de projetos."
             ),
             "tooltip": (
-                "Baseline acadêmico · Shen et al. 2021 (β=0.88, n=85 megaprojetos) · "
-                "Flyvbjerg 2007 (n=258, 70 anos) · Multiplicador de fase SPE-203215 · "
-                "Constante de decaimento: 0.12 provisório (calibração Fase 2 pendente)"
+                "Baseline acadêmico · Shen et al. 2021 (β=0.88 fator de propagação, n=85) · "
+                "Flyvbjerg 2007 Reference Class Forecasting (n=258, 70 anos) · SPE-203215 · "
+                "Faixa Beta-PERT usa P80 de Flyvbjerg como cenário pessimista · "
+                "Motor determinístico Stage 1 — calibração bayesiana ativa no Stage 2"
             ),
         },
         "fr": {
@@ -2266,15 +2420,18 @@ def render_predictive_risk_panel(
             "health": "Santé de Gouvernance",
             "interface": "Risque d'Interface",
             "cost": "Coût de l'Inaction",
+            "cost_range_label": "Plage PERT",
+            "cost_central_label": "central",
             "overrun": "Risque Est. de Dépassement",
             "disclaimer": (
                 "Estimations directionnelles basées sur des priors académiques, non des prédictions certifiées. "
                 "La précision s'améliore au fur et à mesure que Stellae accumule des résultats réels."
             ),
             "tooltip": (
-                "Baseline académique · Shen et al. 2021 (β=0.88, n=85 mégaprojets) · "
-                "Flyvbjerg 2007 (n=258, 70 ans) · Multiplicateur de phase SPE-203215 · "
-                "Constante de décroissance: 0.12 provisoire (calibration Phase 2 en attente)"
+                "Baseline académique · Shen et al. 2021 (β=0.88 facteur de propagation, n=85) · "
+                "Flyvbjerg 2007 Reference Class Forecasting (n=258, 70 ans) · SPE-203215 · "
+                "Plage Beta-PERT utilise P80 de Flyvbjerg comme scénario pessimiste · "
+                "Moteur déterministe Stage 1 — calibration bayésienne activée en Stage 2"
             ),
         },
     }
@@ -2316,15 +2473,32 @@ def render_predictive_risk_panel(
 
     with col3:
         cost = risk["inaction_cost_usd"]
-        cost_str = f"${cost/1e6:.1f}M" if cost >= 1e6 else f"${cost/1e3:.0f}K"
-        st.markdown(
-            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
-            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
-            <div style="font-size:32px;font-weight:800;color:#ff6b6b;">{cost_str}</div>
-            <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["cost"]}</div>
-            </div>''',
-            unsafe_allow_html=True
-        )
+        pert = risk.get("coi_pert")
+        if pert:
+            # Beta-PERT range display — shows min-max with central value below
+            cost_str  = pert["coi_range_str"]
+            cost_sub  = f"{_lbl.get('cost_central_label','central')}: {pert['coi_central_str']}"
+            cost_hint = f"P80 clase: {pert['flyvbjerg_p80_pct']:.0f}%"
+            st.markdown(
+                f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
+                border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 8px;">
+                <div style="font-size:20px;font-weight:800;color:#ff6b6b;line-height:1.2;">{cost_str}</div>
+                <div style="font-size:10px;color:#C9A84C;margin-top:2px;">{cost_sub}</div>
+                <div style="font-size:10px;color:#9a9690;margin-top:2px;">{_lbl.get("cost_range_label","PERT Range")}</div>
+                </div>''',
+                unsafe_allow_html=True
+            )
+        else:
+            # Fallback: Stage 1 deterministic single value
+            cost_str = f"${cost/1e6:.1f}M" if cost >= 1e6 else f"${cost/1e3:.0f}K"
+            st.markdown(
+                f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
+                border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
+                <div style="font-size:32px;font-weight:800;color:#ff6b6b;">{cost_str}</div>
+                <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["cost"]}</div>
+                </div>''',
+                unsafe_allow_html=True
+            )
 
     with col4:
         prob = risk["overrun_probability_pct"]
@@ -2500,10 +2674,18 @@ def render_dashboard_page(supabase_client: Client) -> None:
         _burn_rate = float(_burn_rate_raw) if _burn_rate_raw else 50000.0
     except (ValueError, TypeError):
         _burn_rate = 50000.0
+    # Resolver project_class desde el Project Context para Beta-PERT
+    _proj_industry = _proj_ctx.get("industry", "default") if _proj_ctx else "default"
+    _proj_type     = _proj_ctx.get("project_type", "") if _proj_ctx else ""
+    _proj_class    = _map_project_class(
+        industry=_proj_industry,
+        project_type=_proj_type,
+    )
     render_predictive_risk_panel(
         all_findings=all_findings,
         project_phase=_proj_phase,
         burn_rate_usd_day=_burn_rate,
+        project_class=_proj_class,
     )
 
     # Calcular semáforo
