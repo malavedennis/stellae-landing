@@ -2475,16 +2475,16 @@ def render_predictive_risk_panel(
         cost = risk["inaction_cost_usd"]
         pert = risk.get("coi_pert")
         if pert:
-            # Beta-PERT range display — shows min-max with central value below
-            cost_str  = pert["coi_range_str"]
-            cost_sub  = f"{_lbl.get('cost_central_label','central')}: {pert['coi_central_str']}"
-            cost_hint = f"P80 clase: {pert['flyvbjerg_p80_pct']:.0f}%"
+            # Beta-PERT range — same height as other cards (padding + min-height)
+            # Two lines only: range value + label with central embedded
+            cost_str = pert["coi_range_str"]
+            cost_lbl = f"{_lbl.get('cost_range_label','PERT Range')} · {_lbl.get('cost_central_label','central')}: {pert['coi_central_str']}"
             st.markdown(
                 f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
-                border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:12px 8px;">
-                <div style="font-size:20px;font-weight:800;color:#ff6b6b;line-height:1.2;">{cost_str}</div>
-                <div style="font-size:10px;color:#C9A84C;margin-top:2px;">{cost_sub}</div>
-                <div style="font-size:10px;color:#9a9690;margin-top:2px;">{_lbl.get("cost_range_label","PERT Range")}</div>
+                border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;
+                min-height:88px;display:flex;flex-direction:column;justify-content:center;">
+                <div style="font-size:22px;font-weight:800;color:#ff6b6b;line-height:1.2;">{cost_str}</div>
+                <div style="font-size:10px;color:#9a9690;margin-top:4px;">{cost_lbl}</div>
                 </div>''',
                 unsafe_allow_html=True
             )
