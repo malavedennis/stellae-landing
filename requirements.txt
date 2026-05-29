@@ -59,7 +59,7 @@ python-docx>=1.1.0
 reportlab>=4.0.0
 
 # PDF to image conversion for OCR pipeline
-pdf2image>=2.9.0
+pymupdf>=1.23.0
 
 # Image processing for OCR preprocessing
 Pillow>=10.0.0
