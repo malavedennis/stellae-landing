@@ -1,68 +1,13 @@
-# ==============================================================================
-# STELLAE GOVERNANCE INTELLIGENCE — STAGE 2 DEPENDENCIES
-# Actualizado Mayo 2026: PyPDF2 → PyMuPDF, agregado Doble Vía normalización
-# ==============================================================================
-# Usage:
-#   pip install -r requirements.txt
-#
-# Version policy:
-#   - Core SDKs are pinned to minimum compatible version (>=) not exact (==)
-#     to allow security patches without breaking changes.
-#   - Only direct dependencies are listed here.
-#     Transitive dependencies (postgrest, gotrue, httpx) are managed by their
-#     parent packages — do NOT pin them here to avoid version conflicts.
-# ==============================================================================
-
-# ── DATABASE & AUTHENTICATION ─────────────────────────────────────────────────
-# Supabase Python client — Auth, RLS, PostgREST queries
-# Stage 2 requires >= 2.10.0 for set_session() support used in AUTH_JWT_FLOW
-# Ref: app/utils/auth.py — get_supabase_client(), login(), refresh_session_if_needed()
-supabase>=2.10.0
-
-# ── AI ENGINE ─────────────────────────────────────────────────────────────────
-# Anthropic SDK — claude-sonnet-4-6 (analysis) + claude-haiku-4-5-20251001 (translations)
-# CRITICAL: Must be >= 0.40.0 for claude-sonnet-4-6 model string support
-# anthropic==0.26.0 (previous version) does NOT support this model — will throw ModelNotFoundError
-# Ref: services/analysis_engine.py, services/decision_extractor.py, utils/translations.py
+streamlit
 anthropic>=0.40.0
-
-# ── MATHEMATICAL ENGINE ───────────────────────────────────────────────────────
-# NumPy — Bayesian calibration calculations in BAYESIAN_CALIBRATION_ENGINE.py
-# Ref: services/risk_engine.py — update_beta_bayesian(), composite_governance_score()
-numpy>=1.24.0
-
-# ── ENVIRONMENT & CONFIGURATION ───────────────────────────────────────────────
-# python-dotenv — loads .env file for local development
-# Not needed in Railway (env vars set directly) but required for local setup
-python-dotenv>=1.0.0
-
-# ── DATA VALIDATION ───────────────────────────────────────────────────────────
-# Pydantic — request/response validation for future API layer (Stage 2 endpoints)
-# Also used by Supabase SDK internally
-pydantic>=2.0.0
-
-# ── DOCUMENT PROCESSING (inherited from Stage 1 main.py) ─────────────────────
-# These are already in the Stage 1 requirements — listed here for Stage 2 module clarity
-# PDF text extraction — PyMuPDF replaces PyPDF2 (Mayo 2026)
-# PyMuPDF is faster (written in C), handles complex layouts and multi-column PDFs
-# correctly preserves reading order in engineering documents
-pymupdf>=1.23.0
-
-# OCR fallback for scanned documents
-# Requires Tesseract binary installed separately: apt-get install tesseract-ocr
-pytesseract>=0.3.10
-
-# Word document processing
-python-docx>=1.1.0
-
-# PDF generation for executive reports
-reportlab>=4.0.0
-
-# PDF to image conversion for OCR pipeline
-pymupdf>=1.23.0
-
-# Image processing for OCR preprocessing
-Pillow>=10.0.0
-
-# PDF report generation
-fpdf2>=2.7.0
+supabase
+python-dotenv
+PyPDF2>=3.0.0
+pytesseract
+Pillow
+pdf2image
+python-docx
+fpdf2
+pandas
+numpy
+pydantic

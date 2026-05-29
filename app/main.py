@@ -15,7 +15,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from docx import Document
 from fpdf import FPDF
-import fitz  # PyMuPDF — replaces PyPDF2 for better PDF handling
+from PyPDF2 import PdfReader
 from supabase import Client, create_client
 
 
@@ -425,31 +425,24 @@ def extract_text_with_ocr(image) -> str:
 
 def extract_text_from_pdf(uploaded_file) -> str:
     """
-    Extrae texto de un PDF usando PyMuPDF (fitz).
-    PyMuPDF reemplaza PyPDF2 — más rápido, mejor manejo de layouts complejos,
-    múltiples columnas y PDFs de ingeniería.
-    Si el PDF es escaneado (sin texto digital), aplica OCR automáticamente.
+    Extrae texto de un PDF. Si el PDF es escaneado (sin texto digital),
+    aplica OCR automáticamente página por página.
     """
     pdf_bytes = uploaded_file.getvalue()
+    reader = PdfReader(io.BytesIO(pdf_bytes))
 
     pages_text = []
     ocr_needed_pages = []
 
-    try:
-        # PyMuPDF — abre desde bytes en memoria
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        for i, page in enumerate(doc):
-            page_text = page.get_text("text")  # extracción en orden de lectura
-            if page_text and len(page_text.strip()) > 30:
-                pages_text.append((i, page_text.strip()))
-            else:
-                ocr_needed_pages.append(i)
-        doc.close()
-    except Exception as fitz_err:
-        # Fallback silencioso — si PyMuPDF falla, todas las páginas van a OCR
-        ocr_needed_pages = list(range(10))  # intentar hasta 10 páginas vía OCR
+    # Primera pasada: extraer texto digital
+    for i, page in enumerate(reader.pages):
+        page_text = page.extract_text()
+        if page_text and len(page_text.strip()) > 30:
+            pages_text.append((i, page_text.strip()))
+        else:
+            ocr_needed_pages.append(i)
 
-    # Si hay páginas sin texto digital, aplicar OCR (sin cambios)
+    # Si hay páginas sin texto digital, aplicar OCR
     if ocr_needed_pages:
         try:
             _pdf2img_kwargs = dict(
