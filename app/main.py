@@ -15,7 +15,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from docx import Document
 from fpdf import FPDF
-from PyPDF2 import PdfReader
+import fitz  # PyMuPDF — replaces PyPDF2 for better PDF handling
 from supabase import Client, create_client
 
 
@@ -425,24 +425,31 @@ def extract_text_with_ocr(image) -> str:
 
 def extract_text_from_pdf(uploaded_file) -> str:
     """
-    Extrae texto de un PDF. Si el PDF es escaneado (sin texto digital),
-    aplica OCR automáticamente página por página.
+    Extrae texto de un PDF usando PyMuPDF (fitz).
+    PyMuPDF reemplaza PyPDF2 — más rápido, mejor manejo de layouts complejos,
+    múltiples columnas y PDFs de ingeniería.
+    Si el PDF es escaneado (sin texto digital), aplica OCR automáticamente.
     """
     pdf_bytes = uploaded_file.getvalue()
-    reader = PdfReader(io.BytesIO(pdf_bytes))
 
     pages_text = []
     ocr_needed_pages = []
 
-    # Primera pasada: extraer texto digital
-    for i, page in enumerate(reader.pages):
-        page_text = page.extract_text()
-        if page_text and len(page_text.strip()) > 30:
-            pages_text.append((i, page_text.strip()))
-        else:
-            ocr_needed_pages.append(i)
+    try:
+        # PyMuPDF — abre desde bytes en memoria
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for i, page in enumerate(doc):
+            page_text = page.get_text("text")  # extracción en orden de lectura
+            if page_text and len(page_text.strip()) > 30:
+                pages_text.append((i, page_text.strip()))
+            else:
+                ocr_needed_pages.append(i)
+        doc.close()
+    except Exception as fitz_err:
+        # Fallback silencioso — si PyMuPDF falla, todas las páginas van a OCR
+        ocr_needed_pages = list(range(10))  # intentar hasta 10 páginas vía OCR
 
-    # Si hay páginas sin texto digital, aplicar OCR
+    # Si hay páginas sin texto digital, aplicar OCR (sin cambios)
     if ocr_needed_pages:
         try:
             _pdf2img_kwargs = dict(
@@ -459,7 +466,6 @@ def extract_text_from_pdf(uploaded_file) -> str:
                     if ocr_text:
                         pages_text.append((page_num, f"[OCR] {ocr_text}"))
         except Exception as ocr_error:
-            # Si OCR falla, continuar con el texto digital disponible
             pages_text.append((999, f"[OCR unavailable for some pages: {ocr_error}]"))
 
     # Ordenar por número de página y unir
@@ -487,10 +493,20 @@ def extract_text_from_image(uploaded_file) -> str:
         return f"[Image OCR error: {e}]"
 
 
-def extract_all_text(uploaded_files) -> str:
+def extract_all_text(uploaded_files) -> tuple:
     """
     Extrae texto de todos los archivos subidos.
     Soporta: PDF (digital + escaneado con OCR), DOCX, TXT, JPG, PNG.
+
+    DOBLE VÍA (implementado Mayo 2026):
+    Retorna dos versiones del texto para distintos usos:
+    - raw_text:        Texto original con acentos y mayúsculas intactas.
+                       Se envía a Claude — preserva semántica para mejor comprensión del LLM.
+    - normalized_text: Texto limpio (minúsculas, sin acentos).
+                       Se usa SOLO para búsqueda de micro-triggers por keyword.
+
+    Returns:
+        tuple(raw_text: str, normalized_text: str)
     """
     sections = []
     for uploaded_file in uploaded_files:
@@ -507,7 +523,76 @@ def extract_all_text(uploaded_files) -> str:
             continue
         if text.strip():
             sections.append(f"--- Documento: {uploaded_file.name} ---\n{text}")
-    return "\n\n".join(sections)
+
+    raw_text = "\n\n".join(sections)
+    normalized_text = normalize_text(raw_text)
+    return raw_text, normalized_text
+
+
+# =============================================================================
+# CHUNKING SEMÁNTICO
+# =============================================================================
+
+def chunk_text_smart(
+    text: str,
+    max_chars: int = MAX_CHARS,
+    overlap_chars: int = 500,
+) -> list:
+    """
+    Divide texto extenso en chunks respetando límites naturales de párrafo.
+    Reemplaza el truncado rígido por caracteres (raw_text[:MAX_CHARS]).
+
+    Mejoras vs truncado rígido:
+    - Corta en párrafos naturales (\n\n), no a mitad de oración
+    - Agrega overlap entre chunks — el inicio de cada chunk incluye el
+      final del anterior para no perder contexto entre segmentos
+    - Garantiza que todos los documentos se analizan, no solo los primeros
+      MAX_CHARS caracteres
+
+    Args:
+        text:         Texto completo a dividir (raw o normalized — ambos sirven).
+        max_chars:    Tamaño máximo de cada chunk en caracteres.
+        overlap_chars: Caracteres de solapamiento entre chunks para preservar contexto.
+
+    Returns:
+        list[str]: Lista de chunks. Si el texto cabe en un solo chunk, lista de 1 elemento.
+    """
+    if len(text) <= max_chars:
+        return [text]
+
+    # Dividir en párrafos naturales (doble salto de línea)
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+
+    chunks   = []
+    current  = []
+    current_len = 0
+
+    for para in paragraphs:
+        para_len = len(para)
+
+        if current_len + para_len > max_chars and current:
+            # Cerrar chunk actual
+            chunk_text = "\n\n".join(current)
+            chunks.append(chunk_text)
+
+            # Overlap: conservar el final del chunk anterior como contexto
+            # para que el inicio del próximo no pierda el hilo
+            if overlap_chars > 0:
+                overlap_text = chunk_text[-overlap_chars:]
+                current     = [f"[...contexto anterior...]\n{overlap_text}", para]
+                current_len = len(overlap_text) + para_len + 30
+            else:
+                current     = [para]
+                current_len = para_len
+        else:
+            current.append(para)
+            current_len += para_len
+
+    # Último chunk
+    if current:
+        chunks.append("\n\n".join(current))
+
+    return chunks
 
 
 # =============================================================================
@@ -2970,16 +3055,10 @@ def render_analysis_page(supabase_client: Client) -> None:
                 )
 
                 if not has_cached_results:
-                    raw_text = extract_all_text(uploaded_files)
+                    # Doble Vía: raw para Claude (semántica intacta),
+                    # normalized para micro-triggers (keyword matching)
+                    raw_text, normalized_text = extract_all_text(uploaded_files)
                     char_count = len(raw_text)
-
-                    if char_count > MAX_CHARS:
-                        raw_text = raw_text[:MAX_CHARS]
-                        char_count = MAX_CHARS
-                        st.warning(
-                            "⚠️ Documents truncated to 50,000 characters due to context "
-                            "limits -- consider uploading fewer files per analysis."
-                        )
 
                     num_docs = len(uploaded_files)
                     document_names = [f.name for f in uploaded_files]
@@ -2997,7 +3076,6 @@ def render_analysis_page(supabase_client: Client) -> None:
                     if duplicate and not st.session_state.get("force_reanalysis"):
                         prev_date = format_analysis_date(duplicate.get("created_at", ""))
                         prev_docs = ", ".join(duplicate.get("documents_analyzed", []))
-                        # Guardar info del duplicado en session_state para sobrevivir el rerun
                         st.session_state.pending_duplicate_info = f"⚠️ These exact documents were already analyzed on **{prev_date}** ({prev_docs}). Running again will create a new record with the same content."
                         st.rerun()
 
@@ -3011,8 +3089,31 @@ def render_analysis_page(supabase_client: Client) -> None:
                         if project_id_check:
                             project_ctx = load_project_context(supabase_client, project_id_check)
 
-                        with st.spinner("🔍 Stellae is scanning your documents -- this may take 20-40 seconds..."):
-                            response_text = run_anthropic_analysis(raw_text, project_context=project_ctx)
+                        # Chunking semántico — divide en párrafos naturales con overlap
+                        # Reemplaza el truncado rígido raw_text[:MAX_CHARS]
+                        chunks = chunk_text_smart(raw_text, max_chars=MAX_CHARS, overlap_chars=500)
+                        total_chunks = len(chunks)
+
+                        if total_chunks > 1:
+                            st.info(f"📄 Document set exceeds {MAX_CHARS:,} chars — "
+                                    f"analyzing in {total_chunks} semantic chunks with context overlap.")
+
+                        # Analizar chunk por chunk — combinar resultados
+                        all_responses = []
+                        for chunk_idx, chunk in enumerate(chunks, 1):
+                            spinner_msg = (
+                                f"🔍 Scanning chunk {chunk_idx} of {total_chunks}..."
+                                if total_chunks > 1
+                                else "🔍 Stellae is scanning your documents -- this may take 20-40 seconds..."
+                            )
+                            with st.spinner(spinner_msg):
+                                chunk_response = run_anthropic_analysis(chunk, project_context=project_ctx)
+                                all_responses.append(chunk_response)
+
+                        # Combinar respuestas de todos los chunks en un único texto
+                        # parse_and_store_results procesa el texto combinado
+                        response_text = "\n".join(all_responses)
+                        char_count = min(char_count, MAX_CHARS * total_chunks)
 
                         parse_and_store_results(response_text, num_docs, char_count)
                         st.session_state.last_analyzed_signature = current_signature
