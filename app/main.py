@@ -2590,8 +2590,8 @@ def render_predictive_risk_panel(
             cost_lbl = f"{_lbl.get('cost_range_label','PERT Range')} · {_lbl.get('cost_central_label','central')}: {pert['coi_central_str']}"
             st.markdown(
                 f'''<div style="{_card_base}">
-                <div style="font-size:17px;font-weight:800;color:#ff6b6b;line-height:1.3;letter-spacing:-0.3px;">{cost_str}</div>
-                <div style="font-size:10px;color:#9a9690;margin-top:6px;line-height:1.4;">{cost_lbl}</div>
+                <div style="font-size:22px;font-weight:800;color:#ff6b6b;line-height:1.2;letter-spacing:-0.5px;">{cost_str}</div>
+                <div style="font-size:10px;color:#9a9690;margin-top:5px;line-height:1.3;">{cost_lbl}</div>
                 </div>''',
                 unsafe_allow_html=True
             )
@@ -3886,6 +3886,9 @@ def render_audit_trail_page(supabase_client: Client) -> None:
     def _render_analyses_filtered(status_filter):
         """Renderiza el loop de análisis mostrando solo findings con el status indicado.
         status_filter=None muestra todos."""
+        # Sufijo único por tab para evitar StreamlitDuplicateElementKey
+        _tab_id = status_filter if status_filter else "all"
+
         for analysis in analyses_response.data:
             date_label = format_analysis_date(analysis.get("created_at", ""))
             docs = analysis.get("documents_analyzed", [])
@@ -3925,7 +3928,7 @@ def render_audit_trail_page(supabase_client: Client) -> None:
                 with col_export:
                     st.markdown("&nbsp;", unsafe_allow_html=True)
                     _audit_lang_options = list(OUTPUT_LANGUAGES.keys())
-                    _audit_lang_key = f"audit_lang_{analysis_id}"
+                    _audit_lang_key = f"audit_lang_{analysis_id}_{_tab_id}"
                     _audit_lang_sel = st.selectbox(
                         "Language",
                         options=_audit_lang_options,
@@ -3935,7 +3938,7 @@ def render_audit_trail_page(supabase_client: Client) -> None:
                         key=_audit_lang_key,
                         label_visibility="collapsed",
                     )
-                    if st.button("📄 Export PDF", key=f"export_analysis_{analysis_id}_{status_filter}",
+                    if st.button("📄 Export PDF", key=f"export_analysis_{analysis_id}_{_tab_id}",
                                  use_container_width=True):
                         if findings_all:
                             _pdf_lang = OUTPUT_LANGUAGES[_audit_lang_sel]
@@ -3964,7 +3967,7 @@ def render_audit_trail_page(supabase_client: Client) -> None:
                                         data=_pdf_bytes,
                                         file_name=_fname,
                                         mime="application/pdf",
-                                        key=f"dl_analysis_{analysis_id}_{status_filter}",
+                                        key=f"dl_analysis_{analysis_id}_{_tab_id}",
                                         use_container_width=True,
                                     )
                                 except Exception as e:
@@ -3974,7 +3977,7 @@ def render_audit_trail_page(supabase_client: Client) -> None:
 
                 with col_delete:
                     st.markdown("&nbsp;", unsafe_allow_html=True)
-                    if st.button("🗑️", key=f"del_analysis_{analysis_id}_{status_filter}",
+                    if st.button("🗑️", key=f"del_analysis_{analysis_id}_{_tab_id}",
                                  type="secondary", use_container_width=True,
                                  help="Delete this analysis"):
                         st.session_state.confirm_delete_analysis = analysis_id
@@ -3990,7 +3993,7 @@ def render_audit_trail_page(supabase_client: Client) -> None:
                     col_yes, col_no = st.columns([1, 1])
                     with col_yes:
                         if st.button("✅ Yes, delete permanently",
-                                     key=f"confirm_del_{analysis_id}_{status_filter}",
+                                     key=f"confirm_del_{analysis_id}_{_tab_id}",
                                      type="primary", use_container_width=True):
                             try:
                                 supabase_client.table("analyses").delete().eq("id", analysis_id).execute()
@@ -4002,7 +4005,7 @@ def render_audit_trail_page(supabase_client: Client) -> None:
                                 st.error(f"❌ Failed to delete: {e}")
                     with col_no:
                         if st.button("❌ Cancel",
-                                     key=f"cancel_del_{analysis_id}_{status_filter}",
+                                     key=f"cancel_del_{analysis_id}_{_tab_id}",
                                      use_container_width=True):
                             del st.session_state["confirm_delete_analysis"]
                             del st.session_state["confirm_delete_analysis_date"]
