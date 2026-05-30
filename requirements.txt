@@ -2,7 +2,7 @@ streamlit
 anthropic>=0.40.0
 supabase
 python-dotenv
-PyPDF2>=3.0.0
+pymupdf
 pytesseract
 Pillow
 pdf2image

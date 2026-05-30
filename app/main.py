@@ -15,7 +15,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from docx import Document
 from fpdf import FPDF
-from PyPDF2 import PdfReader
+import fitz  # PyMuPDF
 from supabase import Client, create_client
 
 
@@ -423,47 +423,74 @@ def extract_text_with_ocr(image) -> str:
         return ""
 
 
+def _extract_text_ocr_fallback(pdf_bytes: bytes, ocr_pages: list = None) -> str:
+    """
+    OCR fallback para páginas escaneadas (sin capa de texto digital).
+    Usa pdf2image + pytesseract — mismo motor que antes.
+    ocr_pages: lista de índices de página (0-based). None = todas las páginas.
+    """
+    try:
+        _kwargs = dict(dpi=200)
+        if ocr_pages is not None and len(ocr_pages) > 0:
+            _kwargs["first_page"] = min(ocr_pages) + 1
+            _kwargs["last_page"]  = max(ocr_pages) + 1
+        if POPPLER_PATH:
+            _kwargs["poppler_path"] = POPPLER_PATH
+        images = convert_from_bytes(pdf_bytes, **_kwargs)
+        texts = []
+        for img in images:
+            ocr_text = extract_text_with_ocr(img)
+            if ocr_text:
+                texts.append(f"[OCR] {ocr_text}")
+        return "\n\n".join(texts)
+    except Exception as e:
+        return f"[OCR unavailable: {e}]"
+
+
 def extract_text_from_pdf(uploaded_file) -> str:
     """
-    Extrae texto de un PDF. Si el PDF es escaneado (sin texto digital),
-    aplica OCR automáticamente página por página.
+    Extrae texto de un PDF usando PyMuPDF (fitz).
+    Más fiel que PyPDF2 para layouts complejos, tablas y documentos EPC.
+
+    Estrategia por página:
+    - Si la página tiene texto digital (>30 chars) → PyMuPDF directo.
+    - Si la página está escaneada (sin texto o <30 chars) → OCR fallback.
+    Esto preserva la lógica híbrida que ya existía con PyPDF2.
     """
     pdf_bytes = uploaded_file.getvalue()
-    reader = PdfReader(io.BytesIO(pdf_bytes))
 
-    pages_text = []
-    ocr_needed_pages = []
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
-    # Primera pasada: extraer texto digital
-    for i, page in enumerate(reader.pages):
-        page_text = page.extract_text()
-        if page_text and len(page_text.strip()) > 30:
-            pages_text.append((i, page_text.strip()))
-        else:
-            ocr_needed_pages.append(i)
+        pages_text    = []   # (page_index, text)
+        ocr_needed    = []   # índices de páginas que necesitan OCR
 
-    # Si hay páginas sin texto digital, aplicar OCR
-    if ocr_needed_pages:
+        for i, page in enumerate(doc):
+            page_text = page.get_text().strip()
+            if len(page_text) > 30:
+                pages_text.append((i, page_text))
+            else:
+                ocr_needed.append(i)
+
+        doc.close()
+
+        # Páginas escaneadas — aplicar OCR
+        if ocr_needed:
+            ocr_result = _extract_text_ocr_fallback(pdf_bytes, ocr_pages=ocr_needed)
+            if ocr_result:
+                # Insertar OCR al final con marcador de página
+                pages_text.append((max(ocr_needed), ocr_result))
+
+        # Ordenar por número de página y unir
+        pages_text.sort(key=lambda x: x[0])
+        return "\n".join(text for _, text in pages_text)
+
+    except Exception as e:
+        # Último recurso: OCR completo del PDF
         try:
-            _pdf2img_kwargs = dict(
-                dpi=200,
-                first_page=min(ocr_needed_pages) + 1,
-                last_page=max(ocr_needed_pages) + 1,
-            )
-            if POPPLER_PATH:
-                _pdf2img_kwargs["poppler_path"] = POPPLER_PATH
-            images = convert_from_bytes(pdf_bytes, **_pdf2img_kwargs)
-            for idx, page_num in enumerate(ocr_needed_pages):
-                if idx < len(images):
-                    ocr_text = extract_text_with_ocr(images[idx])
-                    if ocr_text:
-                        pages_text.append((page_num, f"[OCR] {ocr_text}"))
-        except Exception as ocr_error:
-            pages_text.append((999, f"[OCR unavailable for some pages: {ocr_error}]"))
-
-    # Ordenar por número de página y unir
-    pages_text.sort(key=lambda x: x[0])
-    return "\n".join(text for _, text in pages_text)
+            return _extract_text_ocr_fallback(pdf_bytes)
+        except Exception:
+            return f"[PDF extraction error: {e}]"
 
 
 def extract_text_from_docx(uploaded_file) -> str:
