@@ -1849,7 +1849,7 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
             pdf.ln(4)
 
     # ── SECCIÓN 6: CARBON IMPACT ESTIMATE ───────────────────────────────────
-    pdf_section_header(pdf, "6. CARBON IMPACT ESTIMATE (GHG PROTOCOL)")
+    pdf_section_header(pdf, "6. REWORK EMBODIED CARBON ESTIMATE (SCOPE 3 · GHG PROTOCOL)")
     # Recalcular carbon para el PDF — usa COI determinístico del reporte
     _total_open_findings = [f for f in all_findings if f.get("status") == "open"]
     _viol_count = sum(1 for f in all_findings if f.get("governance_violation") and f.get("status") == "open")
@@ -1859,7 +1859,7 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
     _pert_for_carbon = kwargs.get("coi_pert", None) if kwargs else None
 
     if _coi_for_carbon > 0:
-        _carbon_pdf = calculate_carbon_avoided(
+        _carbon_pdf = calculate_rework_embodied_carbon(
             coi_usd=_coi_for_carbon,
             project_class=_project_class_pdf,
             coi_pert=_pert_for_carbon,
@@ -1874,7 +1874,7 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
         pdf.set_font("Helvetica", "B", 13)
         pdf.set_text_color(30, 120, 60)
         pdf.set_xy(20, _carbon_y + 3)
-        pdf.cell(80, 8, f"[LEAF] Est. Carbon Avoided: {_carbon_pdf['tco2_central_str']}", ln=False)
+        pdf.cell(80, 8, f"[LEAF] Rework Embodied Carbon: {_carbon_pdf['tco2_central_str']}", ln=False)
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(60, 60, 60)
         pdf.cell(95, 8, f"Range: {_carbon_pdf['tco2_range_str']}", ln=True)
@@ -1888,8 +1888,8 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
         pdf.cell(0, 6, "Equivalencies (EPA 2024):", ln=True)
         pdf.set_font("Helvetica", "", 9)
         equivs = [
-            f"  * {_carbon_pdf['equiv_cars']:,} passenger cars off the road for one year",
-            f"  * {_carbon_pdf['equiv_flights']:,} transatlantic flights (LHR-JFK) avoided",
+            f"  * {_carbon_pdf['equiv_cars']:,} cars on the road for one year (if rework occurs)",
+            f"  * {_carbon_pdf['equiv_flights']:,} transatlantic flights (LHR-JFK) emitted",
             f"  * {_carbon_pdf['equiv_homes']:,} average homes annual energy footprint",
         ]
         for line in equivs:
@@ -1903,8 +1903,8 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
             f"Methodology: {_carbon_pdf['methodology_note']} "
             f"Project class: {_carbon_pdf['project_class_used']} "
             f"(factor: {_carbon_pdf['factor_used']} tCO2eq per $1,000 rework). "
-            "These are directional estimates based on GHG Protocol Scope 3 Category 1 "
-            "construction emission factors. Not a certified carbon audit."
+            "Scope 3 Category 1 embodied carbon of governance-driven rework per GHG Protocol. "
+            "Not a Scope 4 avoided emissions calculation. Not a certified carbon audit."
         ))
         pdf.set_text_color(0, 0, 0)
         pdf.ln(6)
@@ -2248,11 +2248,11 @@ FLYVBJERG_P80 = {
 
 
 # =============================================================================
-# CARBON AVOIDED METRIC — GHG Protocol Scope 3 + Ecoinvent 3.9
-# tCO₂eq per $1,000 USD of rework / governance failure cost
-# Methodology: EEIO cost-based emission factors, construction sector
-# Source: IPCC AR6 WGIII, Ecoinvent 3.9, GHG Protocol Scope 3 Cat.1
-# These are directional estimates — not certified carbon credits.
+# REWORK EMBODIED CARBON ESTIMATE — GHG Protocol Scope 3 Cat.1 + Ecoinvent 3.9
+# Estimates the embodied carbon of governance-driven rework (Scope 3, Category 1).
+# tCO₂eq per $1,000 USD of rework / governance failure cost.
+# Source: IPCC AR6 WGIII, Ecoinvent 3.9, GHG Protocol Scope 3 Cat.1, EPA 2024.
+# Directional estimates only — not certified carbon credits or Scope 4 avoided emissions.
 # =============================================================================
 EMISSION_FACTORS = {
     # O&G — mercado de entrada
@@ -2301,7 +2301,7 @@ _EPA_FLIGHTS_TCO2     = 0.255  # tCO₂eq por vuelo transatlántico (LHR-JFK, id
 _EPA_HOMES_TCO2_YEAR  = 7.5    # tCO₂eq/año por hogar promedio
 
 
-def calculate_carbon_avoided(
+def calculate_rework_embodied_carbon(
     coi_usd: float,
     project_class: str = "default",
     coi_pert: dict = None,
@@ -2353,9 +2353,9 @@ def calculate_carbon_avoided(
         "factor_used":        factor,
         "project_class_used": key,
         "methodology_note": (
-            "GHG Protocol Scope 3 Cat.1 · Ecoinvent 3.9 · "
-            "IPCC AR6 WGIII · EPA 2024 equivalencies. "
-            "Directional estimates — not certified carbon credits."
+            "Scope 3 Cat.1 embodied carbon of governance-driven rework. "
+            "GHG Protocol · Ecoinvent 3.9 · IPCC AR6 WGIII · EPA 2024. "
+            "Directional estimate — not a certified carbon audit or Scope 4 avoided emissions."
         ),
     }
 
@@ -2802,8 +2802,8 @@ def render_predictive_risk_panel(
         f"· Phase: {risk['phase_multiplier']}x · Interference: {risk['interference_multiplier']}x"
     )
 
-    # ── Carbon Avoided Metric ─────────────────────────────────────────────────
-    _carbon = calculate_carbon_avoided(
+    # ── Rework Embodied Carbon Estimate (Scope 3) ────────────────────────────
+    _carbon = calculate_rework_embodied_carbon(
         coi_usd=risk["inaction_cost_usd"],
         project_class=project_class,
         coi_pert=risk.get("coi_pert"),
@@ -2817,11 +2817,11 @@ def render_predictive_risk_panel(
                 border:1px solid rgba(76,184,122,0.25);border-radius:8px;padding:14px 8px;
                 min-height:88px;display:flex;flex-direction:column;justify-content:center;">
                 <div style="font-size:11px;color:#4cb87a;font-weight:700;letter-spacing:1px;
-                margin-bottom:4px;">🌱 CARBON AVOIDED EST.</div>
+                margin-bottom:4px;">🌱 REWORK CARBON FOOTPRINT EST.</div>
                 <div style="font-size:22px;font-weight:800;color:#4cb87a;line-height:1.1;">
                 {_carbon["tco2_central_str"]}</div>
                 <div style="font-size:9px;color:#9a9690;margin-top:4px;">
-                Range: {_carbon["tco2_range_str"]}</div>
+                Scope 3 · Range: {_carbon["tco2_range_str"]}</div>
                 </div>''',
                 unsafe_allow_html=True
             )
@@ -2830,10 +2830,10 @@ def render_predictive_risk_panel(
                 f'''<div style="background:rgba(76,184,122,0.05);
                 border:1px solid rgba(76,184,122,0.15);border-radius:8px;padding:12px 14px;">
                 <div style="font-size:11px;color:#4cb87a;font-weight:700;
-                letter-spacing:1px;margin-bottom:8px;">EQUIVALENT TO</div>
+                letter-spacing:1px;margin-bottom:8px;">IF THIS REWORK OCCURS, EQUIVALENT TO</div>
                 <div style="font-size:12px;color:#d4d0c8;line-height:1.8;">
-                🚗 <b>{_carbon["equiv_cars"]:,}</b> cars off the road for one year<br>
-                ✈️ <b>{_carbon["equiv_flights"]:,}</b> transatlantic flights avoided<br>
+                🚗 <b>{_carbon["equiv_cars"]:,}</b> cars on the road for one year<br>
+                ✈️ <b>{_carbon["equiv_flights"]:,}</b> transatlantic flights emitted<br>
                 🏠 <b>{_carbon["equiv_homes"]:,}</b> homes annual energy footprint
                 </div>
                 <div style="font-size:9px;color:#6a6660;margin-top:8px;">
