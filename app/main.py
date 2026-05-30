@@ -2555,8 +2555,8 @@ def render_predictive_risk_panel(
     # Estilo común para todas las tarjetas — altura uniforme con flexbox
     _card_base = (
         "text-align:center;background:rgba(255,255,255,0.04);"
-        "border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;"
-        "min-height:96px;display:flex;flex-direction:column;justify-content:center;"
+        "border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:20px 8px;"
+        "min-height:110px;display:flex;flex-direction:column;justify-content:center;"
     )
 
     with col1:
@@ -2590,8 +2590,8 @@ def render_predictive_risk_panel(
             cost_lbl = f"{_lbl.get('cost_range_label','PERT Range')} · {_lbl.get('cost_central_label','central')}: {pert['coi_central_str']}"
             st.markdown(
                 f'''<div style="{_card_base}">
-                <div style="font-size:20px;font-weight:800;color:#ff6b6b;line-height:1.2;">{cost_str}</div>
-                <div style="font-size:10px;color:#9a9690;margin-top:6px;">{cost_lbl}</div>
+                <div style="font-size:17px;font-weight:800;color:#ff6b6b;line-height:1.3;letter-spacing:-0.3px;">{cost_str}</div>
+                <div style="font-size:10px;color:#9a9690;margin-top:6px;line-height:1.4;">{cost_lbl}</div>
                 </div>''',
                 unsafe_allow_html=True
             )
@@ -3862,11 +3862,12 @@ def render_audit_trail_page(supabase_client: Client) -> None:
         return
 
     # ── Filtro de findings por status ────────────────────────────────────────
-    # Cargar todos los findings del proyecto para los contadores de tabs
+    # findings no tiene project_id directo — se accede via analysis_id
+    _analysis_ids = [a["id"] for a in analyses_response.data]
     _all_proj_findings_resp = (
         supabase_client.table("findings")
         .select("id, status, governance_violation")
-        .eq("project_id", selected_project_id)
+        .in_("analysis_id", _analysis_ids)
         .execute()
     )
     _all_proj_findings = _all_proj_findings_resp.data or []
