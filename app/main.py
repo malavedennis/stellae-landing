@@ -2525,13 +2525,19 @@ def render_predictive_risk_panel(
 
     col1, col2, col3, col4 = st.columns(4)
 
+    # Estilo común para todas las tarjetas — altura uniforme con flexbox
+    _card_base = (
+        "text-align:center;background:rgba(255,255,255,0.04);"
+        "border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;"
+        "min-height:96px;display:flex;flex-direction:column;justify-content:center;"
+    )
+
     with col1:
         health = risk["governance_health_pct"]
         color = "#4cb87a" if health >= 70 else "#C9A84C" if health >= 40 else "#ff6b6b"
         st.markdown(
-            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
-            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
-            <div style="font-size:32px;font-weight:800;color:{color};">{health}%</div>
+            f'''<div style="{_card_base}">
+            <div style="font-size:28px;font-weight:800;color:{color};">{health}%</div>
             <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["health"]}</div>
             </div>''',
             unsafe_allow_html=True
@@ -2541,9 +2547,8 @@ def render_predictive_risk_panel(
         irisk = risk["interface_risk_pct"]
         color2 = "#4cb87a" if irisk <= 15 else "#C9A84C" if irisk <= 35 else "#ff6b6b"
         st.markdown(
-            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
-            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
-            <div style="font-size:32px;font-weight:800;color:{color2};">{irisk}%</div>
+            f'''<div style="{_card_base}">
+            <div style="font-size:28px;font-weight:800;color:{color2};">{irisk}%</div>
             <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["interface"]}</div>
             </div>''',
             unsafe_allow_html=True
@@ -2553,16 +2558,13 @@ def render_predictive_risk_panel(
         cost = risk["inaction_cost_usd"]
         pert = risk.get("coi_pert")
         if pert:
-            # Beta-PERT range — same height as other cards (padding + min-height)
-            # Two lines only: range value + label with central embedded
+            # Beta-PERT range — misma altura que las otras tarjetas
             cost_str = pert["coi_range_str"]
             cost_lbl = f"{_lbl.get('cost_range_label','PERT Range')} · {_lbl.get('cost_central_label','central')}: {pert['coi_central_str']}"
             st.markdown(
-                f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
-                border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;
-                min-height:88px;display:flex;flex-direction:column;justify-content:center;">
-                <div style="font-size:22px;font-weight:800;color:#ff6b6b;line-height:1.2;">{cost_str}</div>
-                <div style="font-size:10px;color:#9a9690;margin-top:4px;">{cost_lbl}</div>
+                f'''<div style="{_card_base}">
+                <div style="font-size:20px;font-weight:800;color:#ff6b6b;line-height:1.2;">{cost_str}</div>
+                <div style="font-size:10px;color:#9a9690;margin-top:6px;">{cost_lbl}</div>
                 </div>''',
                 unsafe_allow_html=True
             )
@@ -2570,9 +2572,8 @@ def render_predictive_risk_panel(
             # Fallback: Stage 1 deterministic single value
             cost_str = f"${cost/1e6:.1f}M" if cost >= 1e6 else f"${cost/1e3:.0f}K"
             st.markdown(
-                f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
-                border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
-                <div style="font-size:32px;font-weight:800;color:#ff6b6b;">{cost_str}</div>
+                f'''<div style="{_card_base}">
+                <div style="font-size:28px;font-weight:800;color:#ff6b6b;">{cost_str}</div>
                 <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["cost"]}</div>
                 </div>''',
                 unsafe_allow_html=True
@@ -2582,9 +2583,8 @@ def render_predictive_risk_panel(
         prob = risk["overrun_probability_pct"]
         color4 = "#4cb87a" if prob <= 30 else "#C9A84C" if prob <= 60 else "#ff6b6b"
         st.markdown(
-            f'''<div style="text-align:center;background:rgba(255,255,255,0.04);
-            border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:16px 8px;">
-            <div style="font-size:32px;font-weight:800;color:{color4};">{prob}%</div>
+            f'''<div style="{_card_base}">
+            <div style="font-size:28px;font-weight:800;color:{color4};">{prob}%</div>
             <div style="font-size:11px;color:#9a9690;margin-top:4px;">{_lbl["overrun"]}</div>
             </div>''',
             unsafe_allow_html=True
@@ -2824,7 +2824,9 @@ def render_dashboard_page(supabase_client: Client) -> None:
     st.divider()
 
     # --- Sección 2: KPIs en tiempo real ---
-    total_violations = sum(1 for f in all_findings if f.get("governance_violation"))
+    # Governance Violations = solo findings con violation flag Y status open.
+    # Un finding cerrado ya no es una violación activa.
+    total_violations = sum(1 for f in all_findings if f.get("governance_violation") and f.get("status") == "open")
     total_open = sum(1 for f in all_findings if f.get("status") == "open")
     total_in_review = sum(1 for f in all_findings if f.get("status") == "in_review")
     total_closed = sum(1 for f in all_findings if f.get("status") == "closed")
@@ -2848,29 +2850,29 @@ def render_dashboard_page(supabase_client: Client) -> None:
     with col1:
         decisions = [f for f in all_findings if f.get("category") == "decision"]
         open_d = sum(1 for f in decisions if f.get("status") == "open")
-        viol_d = sum(1 for f in decisions if f.get("governance_violation"))
+        viol_d = sum(1 for f in decisions if f.get("governance_violation") and f.get("status") == "open")
         st.markdown("**🛡️ Decisions**")
         st.markdown(f"- Total: {len(decisions)}")
         st.markdown(f"- Open: {open_d}")
-        st.markdown(f"- Violations: {viol_d}")
+        st.markdown(f"- Active Violations: {viol_d}")
 
     with col2:
         changes = [f for f in all_findings if f.get("category") == "change"]
         open_c = sum(1 for f in changes if f.get("status") == "open")
-        viol_c = sum(1 for f in changes if f.get("governance_violation"))
+        viol_c = sum(1 for f in changes if f.get("governance_violation") and f.get("status") == "open")
         st.markdown("**🔄 Changes**")
         st.markdown(f"- Total: {len(changes)}")
         st.markdown(f"- Open: {open_c}")
-        st.markdown(f"- Violations: {viol_c}")
+        st.markdown(f"- Active Violations: {viol_c}")
 
     with col3:
         risks = [f for f in all_findings if f.get("category") == "risk"]
         open_r = sum(1 for f in risks if f.get("status") == "open")
-        viol_r = sum(1 for f in risks if f.get("governance_violation"))
+        viol_r = sum(1 for f in risks if f.get("governance_violation") and f.get("status") == "open")
         st.markdown("**⚠️ Risks**")
         st.markdown(f"- Total: {len(risks)}")
         st.markdown(f"- Open: {open_r}")
-        st.markdown(f"- Violations: {viol_r}")
+        st.markdown(f"- Active Violations: {viol_r}")
 
     st.divider()
 
@@ -3832,122 +3834,193 @@ def render_audit_trail_page(supabase_client: Client) -> None:
         st.caption("No analyses found for this project.")
         return
 
-    for analysis in analyses_response.data:
-        date_label = format_analysis_date(analysis.get("created_at", ""))
-        docs = analysis.get("documents_analyzed", [])
-        chars = analysis.get("characters_processed", 0)
-        analysis_id = analysis["id"]
+    # ── Filtro de findings por status ────────────────────────────────────────
+    # Cargar todos los findings del proyecto para los contadores de tabs
+    _all_proj_findings_resp = (
+        supabase_client.table("findings")
+        .select("id, status, governance_violation")
+        .eq("project_id", selected_project_id)
+        .execute()
+    )
+    _all_proj_findings = _all_proj_findings_resp.data or []
+    _count_open     = sum(1 for f in _all_proj_findings if f.get("status") == "open")
+    _count_review   = sum(1 for f in _all_proj_findings if f.get("status") == "in_review")
+    _count_closed   = sum(1 for f in _all_proj_findings if f.get("status") == "closed")
+    _count_all      = len(_all_proj_findings)
 
-        with st.expander(f"📅 {date_label} -- {len(docs)} document(s)"):
-            # Fila superior: info + botones export + eliminar
-            col_info, col_export, col_delete = st.columns([4, 2, 1])
-            with col_info:
-                st.markdown("**Documents analyzed:**")
-                for doc_name in docs:
-                    st.markdown(f"- {doc_name}")
-                st.markdown(f"**Characters processed:** {chars:,}")
-            with col_export:
-                st.markdown("&nbsp;", unsafe_allow_html=True)
-                # Selector de idioma + botón export para este análisis
-                _audit_lang_options = list(OUTPUT_LANGUAGES.keys())
-                _audit_lang_key = f"audit_lang_{analysis_id}"
-                _audit_lang_sel = st.selectbox(
-                    "Language",
-                    options=_audit_lang_options,
-                    index=_audit_lang_options.index(
-                        st.session_state.get("pdf_lang_selected", "English")
-                    ),
-                    key=_audit_lang_key,
-                    label_visibility="collapsed",
-                )
-                if st.button("📄 Export PDF", key=f"export_analysis_{analysis_id}",
-                             use_container_width=True):
-                    # Cargar findings de este análisis específico
-                    _findings_resp = supabase_client.table("findings").select("*").eq(
-                        "analysis_id", analysis_id
-                    ).execute()
-                    _analysis_findings = _findings_resp.data if _findings_resp.data else []
+    _tab_all, _tab_open, _tab_review, _tab_closed = st.tabs([
+        f"All ({_count_all})",
+        f"⚠️ Open ({_count_open})",
+        f"🔄 In Review ({_count_review})",
+        f"✅ Closed ({_count_closed})",
+    ])
 
-                    if _analysis_findings:
-                        _pdf_lang = OUTPUT_LANGUAGES[_audit_lang_sel]
-                        with st.spinner(f"Generating PDF..."):
-                            try:
-                                _pdf_findings = translate_findings_for_pdf(
-                                    _analysis_findings, _pdf_lang
-                                )
-                                # Status para este análisis individual
-                                _open   = sum(1 for f in _analysis_findings if f.get("status") == "open")
-                                _review = sum(1 for f in _analysis_findings if f.get("status") == "in_review")
-                                _closed = sum(1 for f in _analysis_findings if f.get("status") == "closed")
-                                _violations = sum(1 for f in _analysis_findings if f.get("governance_violation"))
-                                if _violations > 0:
-                                    _slabel, _smsg = "CRITICAL", f"{_violations} governance violation(s) detected"
-                                elif _open > 0:
-                                    _slabel, _smsg = "AT RISK", f"{_open} open finding(s)"
-                                else:
-                                    _slabel, _smsg = "UNDER CONTROL", "No critical issues detected"
+    def _render_analyses_filtered(status_filter):
+        """Renderiza el loop de análisis mostrando solo findings con el status indicado.
+        status_filter=None muestra todos."""
+        for analysis in analyses_response.data:
+            date_label = format_analysis_date(analysis.get("created_at", ""))
+            docs = analysis.get("documents_analyzed", [])
+            chars = analysis.get("characters_processed", 0)
+            analysis_id = analysis["id"]
 
-                                _pdf_bytes = generate_executive_pdf(
-                                    selected_name,
-                                    _slabel, _smsg,
-                                    _pdf_findings,
-                                    [analysis],  # solo este análisis
-                                    language_code=_pdf_lang,
-                                )
-                                _fname = (
-                                    f"stellae_analysis_{date_label.replace(' ', '_').replace('/', '-')}"
-                                    f"_{selected_name.replace(' ', '_')}.pdf"
-                                )
-                                st.download_button(
-                                    label="⬇️ Download PDF",
-                                    data=_pdf_bytes,
-                                    file_name=_fname,
-                                    mime="application/pdf",
-                                    key=f"dl_analysis_{analysis_id}",
-                                    use_container_width=True,
-                                )
-                            except Exception as e:
-                                st.error(f"❌ PDF error: {e}")
-                    else:
-                        st.warning("No findings found for this analysis.")
+            # Cargar findings de este análisis
+            _f_resp = (
+                supabase_client.table("findings")
+                .select("*")
+                .eq("analysis_id", analysis_id)
+                .execute()
+            )
+            findings_all = _f_resp.data or []
 
-            with col_delete:
-                st.markdown("&nbsp;", unsafe_allow_html=True)
-                if st.button("🗑️", key=f"del_analysis_{analysis_id}", type="secondary",
-                             use_container_width=True, help="Delete this analysis"):
-                    st.session_state.confirm_delete_analysis = analysis_id
-                    st.session_state.confirm_delete_analysis_date = date_label
-                    st.rerun()
+            # Filtrar según el tab activo
+            if status_filter is None:
+                findings_visible = findings_all
+            else:
+                findings_visible = [f for f in findings_all if f.get("status") == status_filter]
 
-            # Confirmación de eliminación
-            if st.session_state.get("confirm_delete_analysis") == analysis_id:
-                st.warning(
-                    f"⚠️ Delete analysis from **{date_label}**? "
-                    f"This will permanently remove all {len(docs)} document(s) and all their findings. "
-                    f"Dashboard metrics will update automatically."
-                )
-                col_yes, col_no = st.columns([1, 1])
-                with col_yes:
-                    if st.button("✅ Yes, delete permanently", key=f"confirm_del_{analysis_id}",
-                                 type="primary", use_container_width=True):
-                        try:
-                            # CASCADE en Supabase elimina findings automáticamente
-                            supabase_client.table("analyses").delete().eq("id", analysis_id).execute()
-                            del st.session_state["confirm_delete_analysis"]
-                            del st.session_state["confirm_delete_analysis_date"]
-                            st.toast("✅ Analysis deleted — metrics updated.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Failed to delete: {e}")
-                with col_no:
-                    if st.button("❌ Cancel", key=f"cancel_del_{analysis_id}", use_container_width=True):
-                        del st.session_state["confirm_delete_analysis"]
-                        del st.session_state["confirm_delete_analysis_date"]
+            # Ocultar el expander completo si no hay findings visibles en este filtro
+            if status_filter is not None and not findings_visible:
+                continue
+
+            viol_count = sum(1 for f in findings_all if f.get("governance_violation") and f.get("status") == "open")
+            viol_label = f"🚨 {viol_count} active violations" if viol_count > 0 else "✅ No active violations"
+            filtered_label = f" — {len(findings_visible)} {status_filter}" if status_filter else ""
+
+            with st.expander(f"📅 {date_label} — {len(docs)} document(s) — {viol_label}{filtered_label}"):
+                col_info, col_export, col_delete = st.columns([4, 2, 1])
+                with col_info:
+                    st.markdown("**Documents analyzed:**")
+                    for doc_name in docs:
+                        st.markdown(f"- {doc_name}")
+                    st.markdown(f"**Characters processed:** {chars:,}")
+                with col_export:
+                    st.markdown("&nbsp;", unsafe_allow_html=True)
+                    _audit_lang_options = list(OUTPUT_LANGUAGES.keys())
+                    _audit_lang_key = f"audit_lang_{analysis_id}"
+                    _audit_lang_sel = st.selectbox(
+                        "Language",
+                        options=_audit_lang_options,
+                        index=_audit_lang_options.index(
+                            st.session_state.get("pdf_lang_selected", "English")
+                        ),
+                        key=_audit_lang_key,
+                        label_visibility="collapsed",
+                    )
+                    if st.button("📄 Export PDF", key=f"export_analysis_{analysis_id}_{status_filter}",
+                                 use_container_width=True):
+                        if findings_all:
+                            _pdf_lang = OUTPUT_LANGUAGES[_audit_lang_sel]
+                            with st.spinner("Generating PDF..."):
+                                try:
+                                    _pdf_findings = translate_findings_for_pdf(findings_all, _pdf_lang)
+                                    _open   = sum(1 for f in findings_all if f.get("status") == "open")
+                                    _violations = sum(1 for f in findings_all if f.get("governance_violation") and f.get("status") == "open")
+                                    if _violations > 0:
+                                        _slabel, _smsg = "CRITICAL", f"{_violations} governance violation(s) detected"
+                                    elif _open > 0:
+                                        _slabel, _smsg = "AT RISK", f"{_open} open finding(s)"
+                                    else:
+                                        _slabel, _smsg = "UNDER CONTROL", "No critical issues detected"
+                                    _pdf_bytes = generate_executive_pdf(
+                                        selected_name, _slabel, _smsg,
+                                        _pdf_findings, [analysis],
+                                        language_code=_pdf_lang,
+                                    )
+                                    _fname = (
+                                        f"stellae_analysis_{date_label.replace(' ', '_').replace('/', '-')}"
+                                        f"_{selected_name.replace(' ', '_')}.pdf"
+                                    )
+                                    st.download_button(
+                                        label="⬇️ Download PDF",
+                                        data=_pdf_bytes,
+                                        file_name=_fname,
+                                        mime="application/pdf",
+                                        key=f"dl_analysis_{analysis_id}_{status_filter}",
+                                        use_container_width=True,
+                                    )
+                                except Exception as e:
+                                    st.error(f"❌ PDF error: {e}")
+                        else:
+                            st.warning("No findings found for this analysis.")
+
+                with col_delete:
+                    st.markdown("&nbsp;", unsafe_allow_html=True)
+                    if st.button("🗑️", key=f"del_analysis_{analysis_id}_{status_filter}",
+                                 type="secondary", use_container_width=True,
+                                 help="Delete this analysis"):
+                        st.session_state.confirm_delete_analysis = analysis_id
+                        st.session_state.confirm_delete_analysis_date = date_label
                         st.rerun()
 
-            st.markdown("---")
-            st.markdown("**Findings -- edit status below:**")
-            render_findings_editor(supabase_client, analysis_id)
+                if st.session_state.get("confirm_delete_analysis") == analysis_id:
+                    st.warning(
+                        f"⚠️ Delete analysis from **{date_label}**? "
+                        f"This will permanently remove all {len(docs)} document(s) and all their findings. "
+                        f"Dashboard metrics will update automatically."
+                    )
+                    col_yes, col_no = st.columns([1, 1])
+                    with col_yes:
+                        if st.button("✅ Yes, delete permanently",
+                                     key=f"confirm_del_{analysis_id}_{status_filter}",
+                                     type="primary", use_container_width=True):
+                            try:
+                                supabase_client.table("analyses").delete().eq("id", analysis_id).execute()
+                                del st.session_state["confirm_delete_analysis"]
+                                del st.session_state["confirm_delete_analysis_date"]
+                                st.toast("✅ Analysis deleted — metrics updated.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Failed to delete: {e}")
+                    with col_no:
+                        if st.button("❌ Cancel",
+                                     key=f"cancel_del_{analysis_id}_{status_filter}",
+                                     use_container_width=True):
+                            del st.session_state["confirm_delete_analysis"]
+                            del st.session_state["confirm_delete_analysis_date"]
+                            st.rerun()
+
+                st.markdown("---")
+                if status_filter is None:
+                    st.markdown("**Findings — edit status below:**")
+                    render_findings_editor(supabase_client, analysis_id)
+                else:
+                    # Vista de solo lectura con lista filtrada por status
+                    st.markdown(f"**Findings with status: {status_filter.replace('_', ' ').title()}**")
+                    if findings_visible:
+                        for f in findings_visible:
+                            _cat = f.get("category", "").upper()
+                            _viol = "🚨 " if f.get("governance_violation") else ""
+                            _title = f.get("title") or f.get("violated_rule") or "Finding"
+                            with st.expander(f"{_viol}[{_cat}] {_title}"):
+                                st.markdown(f.get("content", ""))
+                                if f.get("action_taken"):
+                                    st.caption(f"✅ Action taken: {f['action_taken']}")
+                                if f.get("responsible"):
+                                    st.caption(f"👤 Responsible: {f['responsible']}")
+                    else:
+                        st.caption("No findings with this status in this analysis.")
+
+    with _tab_all:
+        _render_analyses_filtered(None)
+
+    with _tab_open:
+        if _count_open == 0:
+            st.info("✅ No open findings for this project.")
+        else:
+            _render_analyses_filtered("open")
+
+    with _tab_review:
+        if _count_review == 0:
+            st.info("No findings currently in review.")
+        else:
+            _render_analyses_filtered("in_review")
+
+    with _tab_closed:
+        if _count_closed == 0:
+            st.info("No closed findings yet.")
+        else:
+            _render_analyses_filtered("closed")
 
 
 # =============================================================================
