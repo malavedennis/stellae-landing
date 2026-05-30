@@ -1657,7 +1657,7 @@ _STELLAE_LOGO_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAAABmJLR0Q
 
 def generate_executive_pdf(project_name: str, status_label: str, status_message: str,
                             all_findings: list, analyses: list,
-                            language_code: str = "en") -> bytes:
+                            language_code: str = "en", **kwargs) -> bytes:
     """Genera el PDF del reporte ejecutivo con diseño visual mejorado."""
     _raw_labels = PDF_LABELS.get(language_code, PDF_LABELS["en"])
     L = {k: clean_for_pdf(v) if isinstance(v, str) else v for k, v in _raw_labels.items()}
@@ -1847,6 +1847,73 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
             pdf.set_fill_color(250, 250, 250)
             pdf.multi_cell(0, 5.5, raw_content, fill=True)
             pdf.ln(4)
+
+    # ── SECCIÓN 6: CARBON IMPACT ESTIMATE ───────────────────────────────────
+    pdf_section_header(pdf, "6. CARBON IMPACT ESTIMATE (GHG PROTOCOL)")
+    # Recalcular carbon para el PDF — usa COI determinístico del reporte
+    _total_open_findings = [f for f in all_findings if f.get("status") == "open"]
+    _viol_count = sum(1 for f in all_findings if f.get("governance_violation") and f.get("status") == "open")
+    # Estimar COI para el cálculo de carbono (usando parámetros del proyecto si disponibles)
+    _project_class_pdf = kwargs.get("project_class", "default") if kwargs else "default"
+    _coi_for_carbon = kwargs.get("coi_usd", 0) if kwargs else 0
+    _pert_for_carbon = kwargs.get("coi_pert", None) if kwargs else None
+
+    if _coi_for_carbon > 0:
+        _carbon_pdf = calculate_carbon_avoided(
+            coi_usd=_coi_for_carbon,
+            project_class=_project_class_pdf,
+            coi_pert=_pert_for_carbon,
+        )
+
+        # Caja verde con métrica central
+        pdf.set_fill_color(235, 248, 240)
+        pdf.set_draw_color(76, 184, 122)
+        pdf.set_line_width(0.5)
+        _carbon_y = pdf.get_y()
+        pdf.rect(15, _carbon_y, 180, 22, 'DF')
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(30, 120, 60)
+        pdf.set_xy(20, _carbon_y + 3)
+        pdf.cell(80, 8, f"[LEAF] Est. Carbon Avoided: {_carbon_pdf['tco2_central_str']}", ln=False)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(60, 60, 60)
+        pdf.cell(95, 8, f"Range: {_carbon_pdf['tco2_range_str']}", ln=True)
+        pdf.set_draw_color(0, 0, 0)
+        pdf.set_line_width(0.2)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(6)
+
+        # Equivalencias
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(0, 6, "Equivalencies (EPA 2024):", ln=True)
+        pdf.set_font("Helvetica", "", 9)
+        equivs = [
+            f"  * {_carbon_pdf['equiv_cars']:,} passenger cars off the road for one year",
+            f"  * {_carbon_pdf['equiv_flights']:,} transatlantic flights (LHR-JFK) avoided",
+            f"  * {_carbon_pdf['equiv_homes']:,} average homes annual energy footprint",
+        ]
+        for line in equivs:
+            pdf.cell(0, 5.5, clean_for_pdf(line), ln=True)
+        pdf.ln(4)
+
+        # Nota metodológica
+        pdf.set_font("Helvetica", "I", 7.5)
+        pdf.set_text_color(120, 120, 120)
+        pdf.multi_cell(0, 4.5, clean_for_pdf(
+            f"Methodology: {_carbon_pdf['methodology_note']} "
+            f"Project class: {_carbon_pdf['project_class_used']} "
+            f"(factor: {_carbon_pdf['factor_used']} tCO2eq per $1,000 rework). "
+            "These are directional estimates based on GHG Protocol Scope 3 Category 1 "
+            "construction emission factors. Not a certified carbon audit."
+        ))
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(6)
+    else:
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 8, "Carbon impact estimate requires project burn rate configuration.", ln=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(5)
 
     # ── FOOTER ───────────────────────────────────────────────────────────────
     pdf.set_y(-12)
@@ -2178,6 +2245,119 @@ FLYVBJERG_P80 = {
     "epc":                  0.75,   # Generic EPC
     "default":              0.75,   # Conservative default if class unknown
 }
+
+
+# =============================================================================
+# CARBON AVOIDED METRIC — GHG Protocol Scope 3 + Ecoinvent 3.9
+# tCO₂eq per $1,000 USD of rework / governance failure cost
+# Methodology: EEIO cost-based emission factors, construction sector
+# Source: IPCC AR6 WGIII, Ecoinvent 3.9, GHG Protocol Scope 3 Cat.1
+# These are directional estimates — not certified carbon credits.
+# =============================================================================
+EMISSION_FACTORS = {
+    # O&G — mercado de entrada
+    "onshore_oil_gas":      0.052,
+    "oil_gas":              0.052,
+    "offshore":             0.071,
+    "offshore_oil_gas":     0.071,
+    "lng":                  0.065,
+    "lng_terminal":         0.065,
+    "lng_petrochemical":    0.063,
+    "refinery":             0.061,
+    "petrochemical":        0.059,
+    # Energía limpia
+    "offshore_wind":        0.048,
+    "green_hydrogen":       0.055,
+    "ccus":                 0.058,
+    "nuclear":              0.083,
+    # Tecnología / Digital Infrastructure
+    "data_center":          0.079,
+    "semiconductor_fab":    0.091,
+    # Industrial / Manufactura
+    "gigafactory":          0.062,
+    "mining":               0.057,
+    "mining_expansion":     0.057,
+    "copper":               0.057,
+    "lithium":              0.060,
+    # Infraestructura pública
+    "hospital":             0.068,
+    "rail":                 0.044,
+    "rail_metro":           0.044,
+    "metro":                0.044,
+    "tunnel":               0.051,
+    "bridge":               0.042,
+    "road":                 0.038,
+    "airport":              0.051,
+    # General EPC
+    "infrastructure":       0.048,
+    "construction":         0.048,
+    "epc":                  0.052,
+    "default":              0.052,   # Conservative default
+}
+
+# Equivalencias para comunicar el impacto (EPA 2024)
+_EPA_CARS_TCO2_YEAR   = 4.6    # tCO₂eq/año por auto de pasajeros promedio
+_EPA_FLIGHTS_TCO2     = 0.255  # tCO₂eq por vuelo transatlántico (LHR-JFK, ida)
+_EPA_HOMES_TCO2_YEAR  = 7.5    # tCO₂eq/año por hogar promedio
+
+
+def calculate_carbon_avoided(
+    coi_usd: float,
+    project_class: str = "default",
+    coi_pert: dict = None,
+) -> dict:
+    """
+    Estima tCO₂eq evitadas si Stellae previene el costo de inacción (COI).
+
+    Metodología:
+        tCO₂eq = (COI_USD / 1000) × factor(project_class)
+    donde factor es tCO₂eq por $1,000 USD de rework/governance failure,
+    derivado de EEIO cost-based emission factors (Ecoinvent 3.9, GHG Protocol).
+
+    Si hay PERT range disponible, calcula también rango probabilístico.
+
+    Returns dict con:
+        tco2_central, tco2_low, tco2_high,
+        equiv_cars, equiv_flights, equiv_homes,
+        factor_used, project_class_used,
+        range_str, methodology_note
+    """
+    key = project_class.lower().replace(" ", "_").replace("-", "_")
+    factor = EMISSION_FACTORS.get(key, EMISSION_FACTORS["default"])
+
+    # Central: basado en COI determinístico
+    tco2_central = (coi_usd / 1000) * factor
+
+    # Rango PERT si disponible
+    if coi_pert:
+        tco2_low  = (coi_pert["coi_min"]  / 1000) * factor
+        tco2_high = (coi_pert["coi_max"]  / 1000) * factor
+    else:
+        tco2_low  = tco2_central * 0.6
+        tco2_high = tco2_central * 1.5
+
+    def _fmt_co2(v: float) -> str:
+        if v >= 1000:
+            return f"{v/1000:.1f}k tCO₂eq"
+        return f"{v:.0f} tCO₂eq"
+
+    return {
+        "tco2_central":       round(tco2_central, 1),
+        "tco2_low":           round(tco2_low, 1),
+        "tco2_high":          round(tco2_high, 1),
+        "tco2_range_str":     f"{_fmt_co2(tco2_low)} – {_fmt_co2(tco2_high)}",
+        "tco2_central_str":   _fmt_co2(tco2_central),
+        "equiv_cars":         round(tco2_central / _EPA_CARS_TCO2_YEAR),
+        "equiv_flights":      round(tco2_central / _EPA_FLIGHTS_TCO2),
+        "equiv_homes":        round(tco2_central / _EPA_HOMES_TCO2_YEAR),
+        "factor_used":        factor,
+        "project_class_used": key,
+        "methodology_note": (
+            "GHG Protocol Scope 3 Cat.1 · Ecoinvent 3.9 · "
+            "IPCC AR6 WGIII · EPA 2024 equivalencies. "
+            "Directional estimates — not certified carbon credits."
+        ),
+    }
 
 
 def calculate_pert_coi(
@@ -2622,6 +2802,46 @@ def render_predictive_risk_panel(
         f"· Phase: {risk['phase_multiplier']}x · Interference: {risk['interference_multiplier']}x"
     )
 
+    # ── Carbon Avoided Metric ─────────────────────────────────────────────────
+    _carbon = calculate_carbon_avoided(
+        coi_usd=risk["inaction_cost_usd"],
+        project_class=project_class,
+        coi_pert=risk.get("coi_pert"),
+    )
+    if _carbon["tco2_central"] > 0:
+        st.markdown("---")
+        _co2_col1, _co2_col2 = st.columns([1, 2])
+        with _co2_col1:
+            st.markdown(
+                f'''<div style="text-align:center;background:rgba(76,184,122,0.08);
+                border:1px solid rgba(76,184,122,0.25);border-radius:8px;padding:14px 8px;
+                min-height:88px;display:flex;flex-direction:column;justify-content:center;">
+                <div style="font-size:11px;color:#4cb87a;font-weight:700;letter-spacing:1px;
+                margin-bottom:4px;">🌱 CARBON AVOIDED EST.</div>
+                <div style="font-size:22px;font-weight:800;color:#4cb87a;line-height:1.1;">
+                {_carbon["tco2_central_str"]}</div>
+                <div style="font-size:9px;color:#9a9690;margin-top:4px;">
+                Range: {_carbon["tco2_range_str"]}</div>
+                </div>''',
+                unsafe_allow_html=True
+            )
+        with _co2_col2:
+            st.markdown(
+                f'''<div style="background:rgba(76,184,122,0.05);
+                border:1px solid rgba(76,184,122,0.15);border-radius:8px;padding:12px 14px;">
+                <div style="font-size:11px;color:#4cb87a;font-weight:700;
+                letter-spacing:1px;margin-bottom:8px;">EQUIVALENT TO</div>
+                <div style="font-size:12px;color:#d4d0c8;line-height:1.8;">
+                🚗 <b>{_carbon["equiv_cars"]:,}</b> cars off the road for one year<br>
+                ✈️ <b>{_carbon["equiv_flights"]:,}</b> transatlantic flights avoided<br>
+                🏠 <b>{_carbon["equiv_homes"]:,}</b> homes annual energy footprint
+                </div>
+                <div style="font-size:9px;color:#6a6660;margin-top:8px;">
+                {_carbon["methodology_note"]}</div>
+                </div>''',
+                unsafe_allow_html=True
+            )
+
 
 def _render_project_management_panel(project_id: str, project_name: str, supabase_client) -> None:
     """Panel de gestion del proyecto — Rename y Delete. Siempre visible en el Dashboard."""
@@ -2834,9 +3054,35 @@ def render_dashboard_page(supabase_client: Client) -> None:
                 with st.spinner(spinner_msg):
                     # Traducir findings al idioma del PDF si es necesario
                     pdf_findings = translate_findings_for_pdf(all_findings, pdf_lang_code)
+                    # Calcular COI central para la sección de carbono del PDF
+                    _open_f = [f for f in all_findings if f.get("status") == "open"]
+                    _days_open = max(1, sum(
+                        (datetime.now() - datetime.fromisoformat(
+                            f.get("created_at", datetime.now().isoformat()).replace("Z", "+00:00")
+                        ).replace(tzinfo=None)).days
+                        for f in _open_f
+                    ) // max(1, len(_open_f))) if _open_f else 1
+                    from datetime import timezone as _tz
+                    _risk_for_pdf = calculate_governance_risk(
+                        violations=sum(1 for f in all_findings if f.get("governance_violation") and f.get("status") == "open"),
+                        project_phase=_proj_phase,
+                        days_open=_days_open,
+                        burn_rate_usd_day=_burn_rate,
+                        open_findings=_open_f,
+                    )
+                    _pert_for_pdf = calculate_pert_coi(
+                        burn_rate_usd_day=_burn_rate,
+                        days_open=_days_open,
+                        phase_multiplier=_risk_for_pdf["phase_multiplier"],
+                        interference_multiplier=_risk_for_pdf["interference_multiplier"],
+                        project_class=_proj_class,
+                    )
                     pdf_bytes = generate_executive_pdf(
                         selected_name, status_label, status_message, pdf_findings, analyses,
                         language_code=pdf_lang_code,
+                        project_class=_proj_class,
+                        coi_usd=_risk_for_pdf["inaction_cost_usd"],
+                        coi_pert=_pert_for_pdf,
                     )
                 file_name = f"stellae_report_{selected_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
                 st.download_button(
@@ -3945,18 +4191,38 @@ def render_audit_trail_page(supabase_client: Client) -> None:
                             with st.spinner("Generating PDF..."):
                                 try:
                                     _pdf_findings = translate_findings_for_pdf(findings_all, _pdf_lang)
-                                    _open   = sum(1 for f in findings_all if f.get("status") == "open")
+                                    _open_at   = sum(1 for f in findings_all if f.get("status") == "open")
                                     _violations = sum(1 for f in findings_all if f.get("governance_violation") and f.get("status") == "open")
                                     if _violations > 0:
                                         _slabel, _smsg = "CRITICAL", f"{_violations} governance violation(s) detected"
-                                    elif _open > 0:
-                                        _slabel, _smsg = "AT RISK", f"{_open} open finding(s)"
+                                    elif _open_at > 0:
+                                        _slabel, _smsg = "AT RISK", f"{_open_at} open finding(s)"
                                     else:
                                         _slabel, _smsg = "UNDER CONTROL", "No critical issues detected"
+                                    # Carbon kwargs para la sección 6 del PDF
+                                    _open_at_list = [f for f in findings_all if f.get("status") == "open"]
+                                    _days_at = max(1, len(_open_at_list))
+                                    _risk_at = calculate_governance_risk(
+                                        violations=_violations,
+                                        project_phase=_proj_phase,
+                                        days_open=_days_at,
+                                        burn_rate_usd_day=_burn_rate,
+                                        open_findings=_open_at_list,
+                                    )
+                                    _pert_at = calculate_pert_coi(
+                                        burn_rate_usd_day=_burn_rate,
+                                        days_open=_days_at,
+                                        phase_multiplier=_risk_at["phase_multiplier"],
+                                        interference_multiplier=_risk_at["interference_multiplier"],
+                                        project_class=_proj_class,
+                                    )
                                     _pdf_bytes = generate_executive_pdf(
                                         selected_name, _slabel, _smsg,
                                         _pdf_findings, [analysis],
                                         language_code=_pdf_lang,
+                                        project_class=_proj_class,
+                                        coi_usd=_risk_at["inaction_cost_usd"],
+                                        coi_pert=_pert_at,
                                     )
                                     _fname = (
                                         f"stellae_analysis_{date_label.replace(' ', '_').replace('/', '-')}"
