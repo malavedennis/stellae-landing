@@ -1287,38 +1287,153 @@ def clean_markdown_for_table(text: str) -> str:
 
 
 def render_findings_editor(supabase_client: Client, analysis_id: str) -> None:
+    """
+    Editor de findings en Audit Trail.
+
+    Muestra cada finding con su status editable via selectbox.
+    Cuando el status cambia a 'closed' o 'materialized', aparece un
+    formulario inline para documentar:
+      - closed:       action_taken (texto libre)
+      - materialized: action_taken + actual_impact_usd (lo que realmente costó)
+
+    Status disponibles:
+      open         — Detectado, sin acción
+      in_review    — En proceso de resolución
+      closed       — Resuelto correctamente — impacto evitado
+      materialized — El impacto ocurrió — pérdida confirmada
+    """
     response = supabase_client.table("findings").select("*").eq("analysis_id", analysis_id).execute()
     if not response.data:
         st.caption("No findings recorded for this analysis.")
         return
 
-    df_original = pd.DataFrame(response.data)
+    findings = response.data
 
-    # Crear copia limpia para visualización — sin asteriscos Markdown
-    df_display = df_original.copy()
-    if "content" in df_display.columns:
-        df_display["content"] = df_display["content"].apply(clean_markdown_for_table)
+    STATUS_OPTIONS  = ["open", "in_review", "closed", "materialized"]
+    STATUS_LABELS   = {
+        "open":         "⚠️ Open",
+        "in_review":    "🔄 In Review",
+        "closed":       "✅ Closed",
+        "materialized": "💥 Materialized",
+    }
+    STATUS_COLORS = {
+        "open":         "#ff6b6b",
+        "in_review":    "#C9A84C",
+        "closed":       "#4cb87a",
+        "materialized": "#a855f7",  # violeta — impacto real, diferente al riesgo
+    }
 
-    edited_df = st.data_editor(
-        df_display,
-        column_order=["category", "content", "status"],
-        column_config={
-            "category": st.column_config.TextColumn("Category", disabled=True),
-            "content": st.column_config.TextColumn("Content", disabled=True, width="large"),
-            "status": st.column_config.SelectboxColumn("Status", options=["open", "in_review", "closed"]),
-        },
-        hide_index=True,
-        key=f"findings_editor_{analysis_id}",
-    )
+    for f in findings:
+        finding_id   = f["id"]
+        category     = f.get("category", "finding").upper()
+        content      = clean_markdown_for_table(f.get("content", ""))
+        current_status = f.get("status", "open")
+        action_taken   = f.get("action_taken") or ""
+        actual_impact  = f.get("actual_impact_usd") or ""
+        viol_badge     = "🚨 " if f.get("governance_violation") else ""
+        title_preview  = content[:80] + "..." if len(content) > 80 else content
 
-    for _, row in edited_df.iterrows():
-        finding_id = row["id"]
-        original_row = df_original[df_original["id"] == finding_id]
-        if original_row.empty:
-            continue
-        if row["status"] != original_row.iloc[0]["status"]:
-            supabase_client.table("findings").update({"status": row["status"]}).eq("id", finding_id).execute()
-            st.toast("✅ Status updated")
+        # Color del badge de status
+        badge_color = STATUS_COLORS.get(current_status, "#9a9690")
+        status_label = STATUS_LABELS.get(current_status, current_status)
+
+        with st.expander(
+            f"{viol_badge}[{category}] {title_preview}  —  "
+            f"{status_label}"
+        ):
+            # Contenido completo del finding
+            st.markdown(f"**Finding:**")
+            st.markdown(f.get("content", ""))
+
+            # Mostrar datos previos si existen
+            if action_taken:
+                st.caption(f"📝 Action taken: {action_taken}")
+            if actual_impact:
+                try:
+                    st.caption(f"💰 Actual impact recorded: ${float(actual_impact):,.0f} USD")
+                except (ValueError, TypeError):
+                    st.caption(f"💰 Actual impact recorded: {actual_impact}")
+
+            st.markdown("---")
+
+            # ── Selector de status ────────────────────────────────────────
+            new_status = st.selectbox(
+                "Update status",
+                options=STATUS_OPTIONS,
+                index=STATUS_OPTIONS.index(current_status) if current_status in STATUS_OPTIONS else 0,
+                format_func=lambda s: STATUS_LABELS.get(s, s),
+                key=f"status_sel_{finding_id}",
+            )
+
+            # ── Formulario contextual según nuevo status ─────────────────
+            _needs_form = new_status in ("closed", "materialized")
+            _status_changed = new_status != current_status
+
+            if new_status == "closed":
+                new_action = st.text_area(
+                    "Resolution notes / Action taken",
+                    value=action_taken,
+                    placeholder="Describe how this finding was resolved — CR issued, owner assigned, risk mitigated...",
+                    key=f"action_{finding_id}",
+                    height=80,
+                )
+                new_impact_usd = None
+
+            elif new_status == "materialized":
+                st.warning(
+                    "💥 **Materialized** — mark this finding only if the governance failure "
+                    "already caused a real impact (rework, delay, cost overrun). "
+                    "This data feeds Stellae's accuracy calibration."
+                )
+                new_action = st.text_area(
+                    "What happened / Action taken",
+                    value=action_taken,
+                    placeholder="Describe what occurred — rework executed, delay confirmed, contractor claim received...",
+                    key=f"action_{finding_id}",
+                    height=80,
+                )
+                new_impact_usd = st.number_input(
+                    "Actual impact (USD) — leave 0 if unknown",
+                    min_value=0,
+                    value=int(float(actual_impact)) if actual_impact else 0,
+                    step=10000,
+                    key=f"impact_{finding_id}",
+                    help="Best estimate of the real cost: rework, delay penalties, expediting, re-procurement.",
+                )
+
+            else:
+                # open o in_review — sin formulario adicional
+                new_action     = action_taken
+                new_impact_usd = None
+
+            # ── Botón de guardado ─────────────────────────────────────────
+            if st.button(
+                "💾 Save",
+                key=f"save_{finding_id}",
+                type="primary" if _status_changed else "secondary",
+                use_container_width=False,
+            ):
+                update_payload = {"status": new_status}
+
+                if new_action and new_action != action_taken:
+                    update_payload["action_taken"] = new_action
+                elif new_action:
+                    update_payload["action_taken"] = new_action
+
+                if new_status == "materialized" and new_impact_usd is not None:
+                    update_payload["actual_impact_usd"] = float(new_impact_usd) if new_impact_usd else None
+
+                try:
+                    supabase_client.table("findings").update(update_payload).eq("id", finding_id).execute()
+                    if new_status == "materialized":
+                        st.toast(f"💥 Impact materialized — recorded ${new_impact_usd:,.0f} USD" if new_impact_usd else "💥 Finding marked as materialized")
+                    elif new_status == "closed":
+                        st.toast("✅ Finding closed — resolution documented")
+                    else:
+                        st.toast("✅ Status updated")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Could not save: {e}")
 
 
 # =============================================================================
@@ -1741,14 +1856,22 @@ def generate_executive_pdf(project_name: str, status_label: str, status_message:
 
     pdf_section_header(pdf, "2. KPI SUMMARY")
     kpi_y = pdf.get_y()
+    _pdf_mat = sum(1 for f in all_findings if f.get("status") == "materialized")
+    _pdf_confirmed = sum(float(f.get("actual_impact_usd") or 0) for f in all_findings if f.get("status") == "materialized")
+    _mat_val = (
+        f"${_pdf_confirmed/1e6:.1f}M" if _pdf_confirmed >= 1e6
+        else f"${_pdf_confirmed/1e3:.0f}K" if _pdf_confirmed >= 1e3
+        else str(_pdf_mat)
+    )
     kpis = [
         ("Governance Violations", str(total_violations), (180, 30, 30)),
-        ("Open Findings", str(total_open), (180, 100, 0)),
-        ("In Review", str(total_in_review), (30, 100, 180)),
-        ("Closed", str(total_closed), (30, 130, 30)),
+        ("Open Findings",         str(total_open),       (180, 100, 0)),
+        ("In Review",             str(total_in_review),  (30, 100, 180)),
+        ("Closed",                str(total_closed),     (30, 130, 30)),
+        ("Materialized",          _mat_val if _pdf_mat > 0 else "0", (120, 40, 180)),
     ]
     for i, (label, value, color) in enumerate(kpis):
-        pdf.set_xy(15 + i * 46, kpi_y)
+        pdf.set_xy(15 + i * 37, kpi_y)
         pdf_kpi_box(pdf, label, value, color)
     pdf.set_xy(15, kpi_y + 24)
     pdf.ln(6)
@@ -3099,12 +3222,14 @@ def render_dashboard_page(supabase_client: Client) -> None:
     # --- Sección 2: KPIs en tiempo real ---
     # Governance Violations = solo findings con violation flag Y status open.
     # Un finding cerrado ya no es una violación activa.
-    total_violations = sum(1 for f in all_findings if f.get("governance_violation") and f.get("status") == "open")
-    total_open = sum(1 for f in all_findings if f.get("status") == "open")
-    total_in_review = sum(1 for f in all_findings if f.get("status") == "in_review")
-    total_closed = sum(1 for f in all_findings if f.get("status") == "closed")
+    total_violations    = sum(1 for f in all_findings if f.get("governance_violation") and f.get("status") == "open")
+    total_open          = sum(1 for f in all_findings if f.get("status") == "open")
+    total_in_review     = sum(1 for f in all_findings if f.get("status") == "in_review")
+    total_closed        = sum(1 for f in all_findings if f.get("status") == "closed")
+    total_materialized  = sum(1 for f in all_findings if f.get("status") == "materialized")
+    total_confirmed_usd = sum(float(f.get("actual_impact_usd") or 0) for f in all_findings if f.get("status") == "materialized")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric(label="🚨 Governance Violations", value=total_violations)
     with col2:
@@ -3113,6 +3238,15 @@ def render_dashboard_page(supabase_client: Client) -> None:
         st.metric(label="🔄 In Review", value=total_in_review)
     with col4:
         st.metric(label="✅ Closed", value=total_closed)
+    with col5:
+        _mat_label = (
+            f"${total_confirmed_usd/1e6:.1f}M confirmed"
+            if total_confirmed_usd >= 1e6
+            else f"${total_confirmed_usd/1e3:.0f}K confirmed"
+            if total_confirmed_usd >= 1e3
+            else str(total_materialized)
+        )
+        st.metric(label="💥 Materialized", value=_mat_label if total_materialized > 0 else "0")
 
     st.divider()
 
@@ -4117,16 +4251,18 @@ def render_audit_trail_page(supabase_client: Client) -> None:
         .execute()
     )
     _all_proj_findings = _all_proj_findings_resp.data or []
-    _count_open     = sum(1 for f in _all_proj_findings if f.get("status") == "open")
-    _count_review   = sum(1 for f in _all_proj_findings if f.get("status") == "in_review")
-    _count_closed   = sum(1 for f in _all_proj_findings if f.get("status") == "closed")
-    _count_all      = len(_all_proj_findings)
+    _count_open         = sum(1 for f in _all_proj_findings if f.get("status") == "open")
+    _count_review       = sum(1 for f in _all_proj_findings if f.get("status") == "in_review")
+    _count_closed       = sum(1 for f in _all_proj_findings if f.get("status") == "closed")
+    _count_materialized = sum(1 for f in _all_proj_findings if f.get("status") == "materialized")
+    _count_all          = len(_all_proj_findings)
 
-    _tab_all, _tab_open, _tab_review, _tab_closed = st.tabs([
+    _tab_all, _tab_open, _tab_review, _tab_closed, _tab_mat = st.tabs([
         f"All ({_count_all})",
         f"⚠️ Open ({_count_open})",
         f"🔄 In Review ({_count_review})",
         f"✅ Closed ({_count_closed})",
+        f"💥 Materialized ({_count_materialized})",
     ])
 
     def _render_analyses_filtered(status_filter):
@@ -4318,6 +4454,49 @@ def render_audit_trail_page(supabase_client: Client) -> None:
             st.info("No closed findings yet.")
         else:
             _render_analyses_filtered("closed")
+
+    with _tab_mat:
+        if _count_materialized == 0:
+            st.info("No materialized impacts recorded yet. Mark a finding as 'Materialized' when a governance failure causes a confirmed real-world impact.")
+        else:
+            # Resumen de pérdidas confirmadas al tope del tab
+            _mat_findings_all = [f for f in _all_proj_findings if f.get("status") == "materialized"]
+            _total_confirmed_usd = sum(
+                float(f.get("actual_impact_usd") or 0)
+                for f in _mat_findings_all
+            )
+            _viol_mat = sum(1 for f in _mat_findings_all if f.get("governance_violation"))
+
+            # KPI box de pérdidas confirmadas
+            st.markdown(
+                f'''<div style="background:rgba(168,85,247,0.08);
+                border:1px solid rgba(168,85,247,0.30);border-radius:8px;
+                padding:16px 20px;margin-bottom:16px;">
+                <div style="font-size:11px;color:#a855f7;font-weight:700;
+                letter-spacing:1px;margin-bottom:6px;">💥 CONFIRMED LOSSES — MATERIALIZED IMPACTS</div>
+                <div style="display:flex;gap:32px;flex-wrap:wrap;">
+                  <div>
+                    <div style="font-size:24px;font-weight:800;color:#a855f7;">
+                    {"${:,.0f}".format(_total_confirmed_usd) if _total_confirmed_usd > 0 else "—"}</div>
+                    <div style="font-size:10px;color:#9a9690;">Total confirmed impact (USD)</div>
+                  </div>
+                  <div>
+                    <div style="font-size:24px;font-weight:800;color:#a855f7;">{len(_mat_findings_all)}</div>
+                    <div style="font-size:10px;color:#9a9690;">Materialized findings</div>
+                  </div>
+                  <div>
+                    <div style="font-size:24px;font-weight:800;color:#a855f7;">{_viol_mat}</div>
+                    <div style="font-size:10px;color:#9a9690;">Were governance violations</div>
+                  </div>
+                </div>
+                <div style="font-size:9px;color:#6a6660;margin-top:8px;">
+                Actual impact values entered manually at time of materialization. 
+                Used for Stellae accuracy calibration in Stage 2.</div>
+                </div>''',
+                unsafe_allow_html=True
+            )
+            st.markdown("")
+            _render_analyses_filtered("materialized")
 
 
 # =============================================================================
