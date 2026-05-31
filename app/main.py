@@ -2853,7 +2853,7 @@ def render_predictive_risk_panel(
         with st.popover("ℹ️"):
             st.caption(_lbl['tooltip'])
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    col1, col2, col3, col4 = st.columns(4)
 
     # Estilo común para todas las tarjetas — altura uniforme con flexbox
     _card_base = (
@@ -2918,48 +2918,53 @@ def render_predictive_risk_panel(
             unsafe_allow_html=True
         )
 
-    # ── Col 5: Rework Embodied Carbon — tarjeta compacta + ⓘ expander ────────
-    with col5:
-        _carbon = calculate_rework_embodied_carbon(
-            coi_usd=risk["inaction_cost_usd"],
-            project_class=project_class,
-            coi_pert=risk.get("coi_pert"),
-        )
-        if _carbon["tco2_central"] > 0:
-            st.markdown(
-                f'''<div style="text-align:center;background:rgba(76,184,122,0.07);
-                border:1px solid rgba(76,184,122,0.22);border-radius:8px;padding:20px 8px;
-                min-height:110px;display:flex;flex-direction:column;justify-content:center;">
-                <div style="font-size:9px;color:#4cb87a;font-weight:700;letter-spacing:1px;
-                margin-bottom:4px;">🌱 CARBON EST.</div>
-                <div style="font-size:20px;font-weight:800;color:#4cb87a;line-height:1.1;">
-                {_carbon["tco2_central_str"]}</div>
-                <div style="font-size:9px;color:#9a9690;margin-top:4px;">
-                Scope 3 · {_carbon["tco2_range_str"]}</div>
-                </div>''',
-                unsafe_allow_html=True
-            )
-            with st.expander("ⓘ Carbon methodology & equivalencies"):
-                st.markdown(
-                    f"""**If this rework occurs, equivalent to:**
-- 🚗 **{_carbon["equiv_cars"]:,}** cars on the road for one year
-- ✈️ **{_carbon["equiv_flights"]:,}** transatlantic flights emitted
-- 🏠 **{_carbon["equiv_homes"]:,}** homes annual energy footprint
-
-*{_carbon["methodology_note"]}*"""
-                )
-        else:
-            st.markdown(
-                f'''<div style="{_card_base}">
-                <div style="font-size:11px;color:#4a4640;">🌱 Carbon N/A</div>
-                </div>''',
-                unsafe_allow_html=True
-            )
-
     st.caption(
         f"⚠️ {_lbl['disclaimer']} "
         f"· Phase: {risk['phase_multiplier']}x · Interference: {risk['interference_multiplier']}x"
     )
+
+    # ── Opción A: Carbon en fila completa debajo — barra ancha con ⓘ ─────────
+    _carbon = calculate_rework_embodied_carbon(
+        coi_usd=risk["inaction_cost_usd"],
+        project_class=project_class,
+        coi_pert=risk.get("coi_pert"),
+    )
+    if _carbon["tco2_central"] > 0:
+        _c_left, _c_mid, _c_right = st.columns([2, 3, 1])
+        with _c_left:
+            st.markdown(
+                f'''<div style="text-align:center;background:rgba(76,184,122,0.07);
+                border:1px solid rgba(76,184,122,0.22);border-radius:8px;
+                padding:14px 8px;display:flex;flex-direction:column;justify-content:center;
+                min-height:72px;">
+                <div style="font-size:9px;color:#4cb87a;font-weight:700;
+                letter-spacing:1px;margin-bottom:3px;">🌱 REWORK CARBON FOOTPRINT EST.</div>
+                <div style="font-size:22px;font-weight:800;color:#4cb87a;line-height:1.1;">
+                {_carbon["tco2_central_str"]}</div>
+                <div style="font-size:9px;color:#9a9690;margin-top:3px;">
+                Scope 3 · {_carbon["tco2_range_str"]}</div>
+                </div>''',
+                unsafe_allow_html=True
+            )
+        with _c_mid:
+            st.markdown(
+                f'''<div style="background:rgba(76,184,122,0.04);
+                border:1px solid rgba(76,184,122,0.12);border-radius:8px;
+                padding:14px 16px;min-height:72px;display:flex;align-items:center;">
+                <div style="font-size:12px;color:#d4d0c8;line-height:1.9;width:100%;">
+                🚗 <b>{_carbon["equiv_cars"]:,}</b> cars on the road for one year &nbsp;·&nbsp;
+                ✈️ <b>{_carbon["equiv_flights"]:,}</b> transatlantic flights &nbsp;·&nbsp;
+                🏠 <b>{_carbon["equiv_homes"]:,}</b> homes annual energy footprint
+                </div>
+                </div>''',
+                unsafe_allow_html=True
+            )
+        with _c_right:
+            st.markdown("<div style='min-height:8px'></div>", unsafe_allow_html=True)
+            with st.expander("ⓘ Methodology"):
+                st.markdown(
+                    f"""*{_carbon["methodology_note"]}*"""
+                )
 
 
 def _render_project_management_panel(project_id: str, project_name: str, supabase_client) -> None:
